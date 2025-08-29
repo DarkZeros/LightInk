@@ -10,31 +10,36 @@ struct WatchfaceSettings {
     uint8_t mType : 2 {0}; // Watchface type selected from the presets
     bool mDebug {false};
 
-    // Draw cache, try to only draw once the hour
-    // Also can be used to SPI transfer form deep_sleep wake stub
-    struct {
-        // Rotation&watchface, invalidates cache if changes
-        bool mDone : 1 {false};
-        uint8_t mRotation : 2 {2};
-        uint8_t mType : 2 {0};
+    struct Cache {
+        get_arduino_panic_handler
+    };
 
-        struct Units {
-            Rect coord {}; 
-            uint8_t data[270 * 10]{}; // 2700 B = 30%
-        } mUnits;
-        struct Decimal {
-            Rect coord {};
-            uint8_t data[270 * 6]{}; // 1620 B = 20%
-        } mDecimal;
-    } mCache;
 
-    // Store information about the last draw, the most important one is
-    // if the draw was valid or not, there is 128 bytes for extra data for the watchfaces
-    struct {
-        bool mValid{false}; // If the last draw was a watchface
-        uint8_t mMinuteU[2]{}, mMinuteD{}; // Front and back buffers for Units
-        uint8_t mStore[128]{}; // Scratch data the Watchfaces want to store
-    } mLastDraw;
+    // // Draw cache, try to only draw once the hour
+    // // Also can be used to SPI transfer form deep_sleep wake stub
+    // struct {
+    //     // Rotation&watchface, invalidates cache if changes
+    //     bool mDone : 1 {false};
+    //     uint8_t mRotation : 2 {2};
+    //     uint8_t mType : 2 {0};
+
+    //     struct Units {
+    //         Rect coord {}; 
+    //         uint8_t data[270 * 10]{}; // 2700 B = 30%
+    //     } mUnits;
+    //     struct Decimal {
+    //         Rect coord {};
+    //         uint8_t data[270 * 6]{}; // 1620 B = 20%
+    //     } mDecimal;
+    // } mCache;
+
+    // // Store information about the last draw, the most important one is
+    // // if the draw was valid or not, there is 128 bytes for extra data for the watchfaces
+    // struct {
+    //     bool mValid{false}; // If the last draw was a watchface
+    //     uint8_t mMinuteU[2]{}, mMinuteD{}; // Front and back buffers for Units
+    //     uint8_t mStore[128]{}; // Scratch data the Watchfaces want to store
+    // } mLastDraw;
 
     struct {
         // TODO Move me inside watchface belonging to
@@ -69,9 +74,6 @@ protected:
 
     // Can optionally implement Other element drawing based & return vect of rect
     virtual std::vector<Rect> render() { return {}; }
-
-    constexpr static uint8_t mainColor = 0xFF;
-    constexpr static uint8_t backColor = 0x0;
 
 public:
     explicit Watchface(

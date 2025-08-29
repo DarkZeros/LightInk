@@ -165,7 +165,14 @@ Core::Core()
     mDisplay.setInverted(!disp.mInvert);
     mDisplay.setTextColor(0xFF);
 
-    // Show watch face or menu ?
+    // TODO: Ideally we want to do:
+    // * Request watchface / UI draw
+    //  -> Overlay icons on top
+    // * Show it
+    // * Watchface mode? Prerender next steps until alarm (or OOM)
+    // * Set deep sleep
+
+    // Render watch face or menu to frontbuffer
     if (kSettings.mUi.mDepth < 0) {
         mDisplay.setRefreshMode(kSettings.mDisplay.mWatchLut);
         #define ARGS kSettings, kSettings.mWatchface, *this, mDisplay
@@ -193,6 +200,15 @@ Core::Core()
             }
         }, findUi());
     }
+
+    // Draw icons on top
+    if (kSettings.mIcons.mGps)
+        mDisplay.drawBitmap(0, 0, icon_Antenna_16x14, 16, 14, 1);
+
+    // Trigger display update
+    mDisplay.writeAllAndRefresh();
+
+    // While display is updating, if on Watchface + 
 
     // Finish display & pending tasks, then setup touch
     mDisplay.hibernate();

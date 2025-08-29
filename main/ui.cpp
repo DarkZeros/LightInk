@@ -106,8 +106,6 @@ void Menu::render(Display& mDisplay) const {
             }
         }, items[i]);
     }
-
-    mDisplay.writeAllAndRefresh(); 
 }
 
 void Number::render(Display& mDisplay) const {
@@ -119,8 +117,6 @@ void Number::render(Display& mDisplay) const {
     mDisplay.print("  ");
     mDisplay.println(get());
     mDisplay.println(" \\/ ");
-
-    mDisplay.writeAllAndRefresh(); 
 }
 
 namespace {
@@ -198,8 +194,6 @@ void DateTime::render(Display& mDisplay) const {
     auto w_dayofWeek = mDisplay.getTextRect(weekday).w;
     mDisplay.setCursor((mDisplay.WIDTH - w_dayofWeek) / 2, mDisplay.getCursorY());
     mDisplay.printf(weekday);
-
-    mDisplay.writeAllAndRefresh(); 
 }
 
 } // namespace UI
