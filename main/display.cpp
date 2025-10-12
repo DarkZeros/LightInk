@@ -462,11 +462,20 @@ void Display::drawPixel(int16_t x, int16_t y, uint16_t color)
       y = HEIGHT - y - 1;
       break;
   }
-  auto& ptr = buffer[x / 8 + y * WB_BITMAP];
+  const int index = x / 8 + y * WB_BITMAP;
+  const uint8_t mask = 1 << (7 - x % 8);
+  uint8_t& ptr = buffer[index];
+  uint8_t oldVal = ptr;
+
   if (color)
-    ptr |= 1 << (7 - x % 8);
+    ptr |= mask;
   else
-    ptr &= ~(1 << (7 - x % 8));
+    ptr &= ~mask;
+
+  if (changes && ptr != oldVal)
+  {
+    changes->set(index);
+  }
 }
 
 

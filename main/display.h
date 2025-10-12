@@ -10,6 +10,7 @@
 #pragma once
 
 #include <Adafruit_GFX.h>
+#include <bitset>
 
 #include "hardware.h"
 
@@ -50,6 +51,7 @@ public:
   static constexpr uint8_t WB_BITMAP = (WIDTH + 7) / 8;
 
   uint8_t buffer[WB_BITMAP * HEIGHT];
+  std::optional<std::bitset<(WB_BITMAP * HEIGHT + 7) / 8>> changes;
 
   Display();
 
