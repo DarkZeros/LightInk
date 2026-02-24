@@ -10,6 +10,7 @@
 
 namespace {
   RTC_DATA_ATTR bool mInitialized {false};
+  RTC_DATA_ATTR MeasureRate mCurrentRate {0};
 };
 
 Touch::Touch(TouchSettings& settings) : mSettings{settings} {
@@ -49,12 +50,17 @@ void Touch::setUp(bool onlyMenuLight) {
   esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
 #endif
 
+  const auto rate = mSettings.mRate[onlyMenuLight];
+  if (rate == mCurrentRate)
+    return;
+  mCurrentRate = rate;
+
 #if(HW_VERSION < 10)
   touch_ll_set_meas_time(mSettings.mCycles[onlyMenuLight] * 1024);
-  touch_pad_set_measurement_interval((32 * 1024) / MeasureRate::_1s * mSettings.mRate[onlyMenuLight]);
+  touch_pad_set_measurement_interval((32 * 1024) / MeasureRate::_1s * rate);
 #else
   touch_ll_set_meas_times(mSettings.mCycles[onlyMenuLight] * 1024);
-  touch_pad_set_measurement_interval((4 * 1024) / MeasureRate::_1s * mSettings.mRate[onlyMenuLight]); //???
+  touch_pad_set_measurement_interval((4 * 1024) / MeasureRate::_1s * rate); //???
 #endif
 
   auto setTouchPad = [&](auto&& v, bool enabled) {
@@ -76,9 +82,14 @@ void Touch::setUp(bool onlyMenuLight) {
   setTouchPad(HW::Touch::BotL, true);
 
   kDSState.lightPad = HW::Touch::Pad[mSettings.mMap[HW::Touch::BotL]];
+}
 
+void Touch::enable() const {
   esp_sleep_enable_touchpad_wakeup();
-  clear();
+}
+
+void Touch::disable() const {
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TOUCHPAD);
 }
 
 Touch::Btn Touch::read() const {

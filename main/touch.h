@@ -60,4 +60,7 @@ public:
     Btn read() const;
     void clear() const;
     Btn readAndClear() const;
+
+    void enable() const;
+    void disable() const;
 };
