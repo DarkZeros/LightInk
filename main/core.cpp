@@ -383,6 +383,7 @@ void Core::NTPSync() {
     return;
   }
   delay(5'000);
+  WiFi.disconnect();
 
   ESP_LOGE("NTP", "done");
 }
