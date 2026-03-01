@@ -201,9 +201,9 @@ Core::Core()
 
     // Calculate stepsize based on battery level or on battery save mode
     auto stepSize = [&] {
-        if (kSettings.mPowerSave.mNight && mNow.Hour < 7)
+        if (kSettings.mPower.mNight && mNow.Hour < 7)
             return 5;
-        if (!kSettings.mPowerSave.mAuto)
+        if (!kSettings.mPower.mAuto)
             return 1;
         if (mBattery.mCurPercent < 100) {
             return 5;

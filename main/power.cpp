@@ -1,5 +1,6 @@
 #include "power.h"
 #include "hardware.h"
+#include "settings.h"
 
 #include "driver/gpio.h"
 
@@ -39,10 +40,14 @@ Power::Flag Power::status() {
 
 // Need to store this in RTC memory since will not be available in DeepSleep
 const RTC_SLOW_ATTR rtc_io_desc_t desc = rtc_io_desc[rtc_io_num_map[HW::kVoltageSelectPin]];
+extern struct Settings kSettings;
 
 void Power::set(bool high) {
   // Could be that the board only supports a given high voltage
   if constexpr (!HW::kHasLowVoltage)
+    high = true;
+
+  if (!kSettings.mPower.mLowVoltage)
     high = true;
 
   // Caches previous values

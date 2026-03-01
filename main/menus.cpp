@@ -123,9 +123,10 @@ UI::Any Core::generateMenus() {
       UI::Loop<DisplayMode>{"Menu Lut", kSettings.mDisplay.mMenuLut },
       UI::Loop<DisplayMode>{"Watch Lut", kSettings.mDisplay.mWatchLut },
     }},
-    UI::Menu{"Power Save", {
-      UI::Bool{"Night (0-6am)", kSettings.mPowerSave.mNight },
-      UI::Bool{"Auto (<25%)", kSettings.mPowerSave.mAuto },
+    UI::Menu{"Power", {
+      UI::Bool{"Night (0-6am)", kSettings.mPower.mNight },
+      UI::Bool{"Auto (<25%)", kSettings.mPower.mAuto },
+      UI::Bool{"Low Voltage", kSettings.mPower.mLowVoltage },
     }},
     UI::Menu{"Touch", {
       UI::Bool{"Haptic", kSettings.mTouch.mHaptic},
