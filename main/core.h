@@ -9,12 +9,11 @@
 #include "display.h"
 #include "watchface.h"
 #include "battery.h"
+#include "secrets.h"
 #include "touch.h"
 #include "ui.h"
 #include "secrets.h"
 #include "time.h"
-
-extern const std::pair<std::string, std::string> kWifiConfig;
 
 /* This is the primary class of the project.
  * It has the entry point from deepsleep as well as all
@@ -34,7 +33,8 @@ public:
     void setNextUpdate(uint32_t seconds);
     void finishTasks();
 
-    void NTPSync();
+    bool NTPSync();
+    void NTPSync2();
 
     Time mTime;
     Battery mBattery;

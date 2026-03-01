@@ -58,18 +58,17 @@ Core::Core()
 
     // Queue the rest of the first boot for later (GPS, LORA, NTP, Touch)
     mTasks.emplace_back(std::async(std::launch::deferred, [&]{
-        // Delay boot, try to get GPS location, to setup time/location
+        // Trigger NTP, if wifi is available, it will set time
+        NTPSync();
+
+        // Try to get GPS location, to setup time/location
         if constexpr (HW::kHasGps) {
-            mGps.on();
+            if (!mGps.mData.mLocation)
+                mGps.on();
         } else {
             mGps.off();
-            // HACK: Set a fixed time/location to start with
-            tmElements_t time{.Second=0, .Minute=9, .Hour=23, .Wday=0, .Day=7, .Month=7, .Year=2025-1970};
-            mTime.setTime(time);
+            // HACK: Set a fixed location to start with
             mGps.mData.mLocation = Gps::Data::Location{.mLat=51.438412, .mLon=-0.511787};
-
-            // Trigger NTP, if wifi is available, it will set time
-            NTPSync();
         }
 
         // Set up the touch, not enable it yet
@@ -363,7 +362,108 @@ void Core::setNextUpdate(uint32_t seconds)
 #include <Arduino.h>
 #include <WiFiManager.h>
 
-void Core::NTPSync() {
+bool connectWifi(uint32_t timeoutMs = 2000)
+{
+    WiFi.mode(WIFI_STA);
+    for (auto& net : kWifiNetworks) {
+        ESP_LOGI("WiFi", "Connecting to %s", net.mSsid.c_str());
+        WiFi.begin(net.mSsid.c_str(), net.mPswd.c_str());
+        uint32_t start = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+            delay(100);
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            ESP_LOGE("WiFi", "Connected: %s", net.mSsid.c_str());
+            return true;
+        }
+        WiFi.disconnect(true);
+    }
+    return false;
+}
+
+#include "esp_sntp.h"
+
+static bool sntpSynced = false;
+void timeSyncCallback(struct timeval *tv)
+{
+    sntpSynced = true;
+}
+
+bool syncTime(uint32_t timeoutMs = 5000)
+{
+    sntpSynced = false;
+    
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_set_time_sync_notification_cb(timeSyncCallback);
+    esp_sntp_init();
+
+    uint32_t start = millis();
+
+    while (!sntpSynced && millis() - start < timeoutMs)
+        delay(10);
+
+    esp_sntp_stop();
+
+    return sntpSynced;
+}
+
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
+
+bool fetchTimezone(String& tz, std::optional<Gps::Data::Location>& loc)
+{
+    HTTPClient http;
+    http.begin("http://ip-api.com/json");
+
+    int code = http.GET();
+    if (code != 200)
+        return false;
+
+    JsonDocument doc;
+    deserializeJson(doc, http.getString());
+
+    tz = doc["timezone"].as<String>();
+
+    loc.emplace();
+    loc->mLat = doc["lat"].as<float>();
+    loc->mLon = doc["lon"].as<float>();
+
+    ESP_LOGE("Geo", "TZ: %s", tz.c_str());
+    ESP_LOGE("Geo", "Loc %f / %f", doc["lat"].as<float>(), doc["lon"].as<float>());
+
+    return true;
+}
+
+bool Core::NTPSync()
+{
+    auto powerLock = Power::Lock(Power::Flag::Wifi);
+    initArduino();
+
+    if (!connectWifi()) {
+        ESP_LOGE("NTP", "WiFi failed");
+        return false;
+    }
+
+    if (!syncTime()) {
+        ESP_LOGE("NTP", "NTP sync failed");
+        return false;
+    }
+    // Update time
+    mTime.readTime();
+
+    String timezone;
+    if (fetchTimezone(timezone, mGps.mData.mLocation)) {
+        setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
+        tzset();
+    }
+
+    WiFi.disconnect(true);
+    ESP_LOGI("NTP", "Sync done");
+    return true;
+}
+
+void Core::NTPSync2() {
   // Select default voltage 2.9V/3.3V for WiFi
   // We need Arduino for this (WiFi + NTP)
   auto powerLock = Power::Lock(Power::Flag::Wifi);
