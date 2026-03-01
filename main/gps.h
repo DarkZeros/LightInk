@@ -1,3 +1,4 @@
+#include <chrono>
 #include <optional>
 #include <TimeLib.h>
 
@@ -21,7 +22,11 @@ public:
     std::optional<DateTime> mDateTime;
     std::optional<float> mSpeed;
     std::optional<float> mDirection;
+    std::optional<std::chrono::seconds> mTimeOn;
   } mData;
+
+  static constexpr std::chrono::seconds kMaxTimeGpsOn {60};
+  static constexpr std::chrono::seconds kGpsUpdateRate {10};
 
   void on() const { set(true); }
   void off() const { set(false); }

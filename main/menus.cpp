@@ -90,17 +90,18 @@ UI::Any Core::generateMenus() {
       }},
       UI::Menu{"Alarms", buildAlarms(*this)},
       UI::Action{"NTP", [&]{ NTPSync(); }},
-      UI::Action{(HW::kHasGps ? (mGps.isOn() ? "GPS Off" : "GPS resync") : "GPS not present"), [&]{
-        if (HW::kHasGps) {
-          if (mGps.isOn()) {
-            mGps.off();
-            mGps.mData.mLocation = Gps::Data::Location{.mLat=51.438412, .mLon=-0.511787};
-          } else {
-            mGps.mData.mLocation.reset();
-            mGps.on();
-          }
-          regenerateMenus();
+      UI::Action{(HW::kHasGps ? (mGps.isOn() ? "GPS Off" : "GPS resync") : "No GPS"), [&]{
+        if constexpr (!HW::kHasGps) {
+          return;
         }
+        if (mGps.isOn()) {
+          mGps.off();
+          mGps.mData.mLocation = Gps::Data::Location{.mLat=51.438412, .mLon=-0.511787};
+        } else {
+          mGps.mData.mLocation.reset();
+          mGps.on();
+        }
+        regenerateMenus();
       }},
     }},
     UI::Menu{"Watchface", {

@@ -18,6 +18,7 @@ void Gps::set(bool high) const {
     Power::lock(Power::Flag::Gps);
   } else {
     Power::unlock(Power::Flag::Gps);
+    mData.mTimeOn.reset();
   }
   if (HW::Gps::Vcc == (uint8_t)-1)
     return;

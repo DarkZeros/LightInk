@@ -89,11 +89,11 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
   if (kDSState.displayBusy) {
     kDSState.displayBusy = false;
 
-    // Go back to low power mode
+    // Go back to low power mode, since to update the RAM low power is enough
     Power::unlock(Power::Flag::Display);
     uSpi::init();
 
-    // Wait until display busy goes off (this will not be needed in next HW version
+    // Wait until display busy goes off (this will not be needed in next HW versions)
     if constexpr (!HW::kHasDisplayBusyWake) {
       auto& busyWait = kDSState.busyWait[getSetDisplayMode()];
       gpio_mode_input<HW::Display::Busy>();
