@@ -50,7 +50,7 @@ Core::Core()
     
     // reset calibration to the ESP32
     mTime.calReset();
-    mTime.getMinutesWest() = 60; // Default zone +1
+    // mTime.getMinutesWest() = 60; // Default zone +1
     mTime.readTime();
 
     // Recover Settings from Disk // TODO
