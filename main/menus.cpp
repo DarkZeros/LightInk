@@ -157,6 +157,10 @@ UI::Any Core::generateMenus() {
         mTasks.emplace_back(std::async(std::launch::async, []{
           Peripherals::tetris();
         }));
+        // xTaskCreatePinnedToCore([](void*){
+        //   Peripherals::tetris();
+        //   vTaskDelete(nullptr);
+        // }, "tetris", 4096, nullptr, 5, nullptr, 1);
       }},
       UI::Action{"BLE Test", [&]{
         // extern void ble_main(void);

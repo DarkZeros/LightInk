@@ -25,6 +25,7 @@ void Peripherals::vibrator(const std::vector<int>& pattern) {
 }
 
 #include "driver/ledc.h"
+#include "soc/ledc_struct.h"
 
 struct Speaker {
   constexpr static auto kTimer = LEDC_TIMER_0;
@@ -68,6 +69,16 @@ struct Speaker {
         }
     };
     ledc_channel_config(&ledc_channel);
+
+    // ledc_timer_config_t ledc_timer = {
+    //   .speed_mode = kSpeedMode,
+    //   .duty_resolution = LEDC_TIMER_2_BIT, // calc_resolution(freq),
+    //   .timer_num = kTimer,
+    //   .freq_hz = 0, // Set output frequency
+    //   .clk_cfg = kClock,
+    //   .deconfigure = false,
+    // };
+    // ledc_timer_config(&ledc_timer);
   }
   ~Speaker() {
     stop();
@@ -80,18 +91,39 @@ struct Speaker {
       return;
     }
     // Update timer + duty
+    const auto dutyBit = calc_resolution(freq);
+    uint32_t halfDuty = 1 << (dutyBit - 1);
+
+    ledc_stop(kSpeedMode, kChannel, 0);  // Clear duty_start / sig_out_en first
+
     ledc_timer_config_t ledc_timer = {
       .speed_mode = kSpeedMode,
-      .duty_resolution = calc_resolution(freq),
+      .duty_resolution = dutyBit,
       .timer_num = kTimer,
       .freq_hz = freq, // Set output frequency
       .clk_cfg = kClock,
       .deconfigure = false,
     };
     ledc_timer_config(&ledc_timer);
-    uint32_t halfDuty = 1 << (ledc_timer.duty_resolution - 1);
-    ledc_set_duty(kSpeedMode, kChannel, halfDuty);
-    ledc_update_duty(kSpeedMode, kChannel);
+
+    // // ledc_set_freq(kSpeedMode, kTimer, freq);
+    // ledc_set_duty(kSpeedMode, kChannel, halfDuty);
+    // ledc_update_duty(kSpeedMode, kChannel);
+    // // ledc_ls_channel_update(kSpeedMode, kChannel);
+    // // ledc_hal_ls_channel_update(&(p_ledc_obj[kSpeedMode]->ledc_hal), channel);
+
+    // // ledc_set_freq(kSpeedMode, kTimer, freq);
+    // // ledc_set_duty_and_update(kSpeedMode, kChannel, halfDuty, 0);
+
+    // Directly write registers, bypassing the duty_start spin-wait
+    LEDC.channel_group[kSpeedMode].channel[kChannel].duty.duty = halfDuty << 4;
+    LEDC.channel_group[kSpeedMode].channel[kChannel].conf0.sig_out_en = 1;
+    LEDC.channel_group[kSpeedMode].channel[kChannel].conf1.duty_inc = 1;
+    LEDC.channel_group[kSpeedMode].channel[kChannel].conf1.duty_num = 1;
+    LEDC.channel_group[kSpeedMode].channel[kChannel].conf1.duty_cycle = 1;
+    LEDC.channel_group[kSpeedMode].channel[kChannel].conf1.duty_scale = 0;
+    // Trigger low-speed channel update (no spin-wait)
+    LEDC.channel_group[kSpeedMode].channel[kChannel].conf0.low_speed_update = 1;
   }
 
   void stop() {
