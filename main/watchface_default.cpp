@@ -84,7 +84,7 @@ std::vector<Rect> DefaultWatchface::render() {
   if (config.mMoon) { // FIXME: Always update? Rarely changes
     bool color = mSettings.mConst.mDisplay.mInvert;
     auto frac = getIlluminatedFractionOfMoon(mTime.getTimeval().tv_sec);
-    mDisplay.drawMoon(frac, 50, 150, 30, !color, color);
+    mDisplay.drawMoonFast(frac, 50, 150, 30, !color, color);
     // ESP_LOGE("frac", "%f", frac);
     constexpr auto center = std::pair{50, 150};
     constexpr auto radius = 30;
