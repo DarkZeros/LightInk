@@ -228,7 +228,7 @@ void Display::_setRefreshMode(const DisplayMode& mode)
   bool romLut = mode == DisplayMode::FULL || mode == DisplayMode::FAST;
 
   // Build default updateCommand
-  uint8_t updateCommand = kTurnOn;
+  uint8_t updateCommand = kTurnOn; 
   if (romLut) {
     updateCommand |= kLoadLut;
   } else {
@@ -243,7 +243,7 @@ void Display::_setRefreshMode(const DisplayMode& mode)
 
   // If we are chaging from FULL to FAST/CUSTOM need to set
   // the display into 2 buffer mode again by triggering an update
-  if ((mode == DisplayMode::FULL) ^ kState.fullMode) {
+  if ((mode == DisplayMode::FULL) ^ kState.fullMode && kState.firstRefreshDone) {
     _transferCommand(0x22);
     _transfer(updateCommand);
     _transferCommand(0x20);

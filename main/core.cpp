@@ -140,8 +140,8 @@ Core::Core()
     mTouch.setUp(kSettings.mUi.mDepth < 0);
 
     // Beep conditions
-    if (mNow.Minute == 0
-        && wakeup_reason == ESP_SLEEP_WAKEUP_TIMER
+    const bool hourUpdate = mNow.Minute == 0 && mNow.Second == 0 && wakeup_reason == ESP_SLEEP_WAKEUP_TIMER;
+    if (hourUpdate
         && mNow.Hour >= kSettings.mHourly.mFirst
         && mNow.Hour <= kSettings.mHourly.mLast)
     {

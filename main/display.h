@@ -29,7 +29,7 @@ struct DisplaySettings {
   bool mDarkBorder {false};
   uint8_t mRotation {2};
   DisplayMode mMenuLut {FAST};
-  DisplayMode mWatchLut {FAST};
+  DisplayMode mWatchLut {QUICK};
 };
 
 extern int getSetDisplayMode();
@@ -41,7 +41,7 @@ struct Rect {
 
 class Display : public Adafruit_GFX {
 public:
-  static constexpr bool kReduceBoosterTime = true; // Saves ~200ms + Reduce power usage
+  static constexpr bool kReduceBoosterTime = false; // Saves ~200ms + Reduce power usage, degrades quality!
   static constexpr bool kFastUpdateTemp = true; // Saves 5ms + FixedSpeedier LUT (300ms update)
   static constexpr bool kOverdriveSPI = false; // Uses a 25% faster SPI out of spec
 
