@@ -11,6 +11,7 @@
 #include "peripherals.h"
 #include "hardware.h"
 #include "settings.h"
+#include "trace.h"
 
 #include "watchface_default.h"
 
@@ -26,6 +27,7 @@ Core::Core()
     if (sDone)
         return false;
     sDone = true;
+    TRACE("mFirstTimeBoot");
 
     if constexpr (HW::kVersion < 10) {
         // Set all GPIOs to input that we are not using to avoid leaking power
@@ -55,6 +57,8 @@ Core::Core()
 
     // Recover Settings from Disk // TODO
     // load NVS and load settings
+
+    // TODO: Detect HW presence like LORA/GPS is connected and responding
 
     // Queue the rest of the first boot for later (GPS, LORA, NTP, Touch)
     mTasks.emplace_back(std::async(std::launch::deferred, [&]{
@@ -172,18 +176,21 @@ Core::Core()
         mDisplay.setRefreshMode(kSettings.mDisplay.mWatchLut);
         #define ARGS kSettings, kSettings.mWatchface, *this, mDisplay
         // Instantiate the watchface type we are using
-        switch(kSettings.mWatchface.mType) {
-            default: DefaultWatchface(ARGS).draw(); break;
-            // case 0: break;
-            // case 1: break;
-            // case 2: break;
-            // case 3: break;
+        {
+            switch(kSettings.mWatchface.mType) {
+                default: DefaultWatchface(ARGS).draw(); break;
+                // case 0: break;
+                // case 1: break;
+                // case 2: break;
+                // case 3: break;
+            }
         }
         #undef ARGS
         Light::off(); // Always turn off light exiting the Menus
     } else {
         mDisplay.setRefreshMode(kSettings.mDisplay.mMenuLut);
         kSettings.mWatchface.mLastDraw.mValid = false;
+        TRACE("menu_render");
         std::visit([&](auto& e){
             if constexpr (has_render<decltype(e), Display&>::value) {
                 e.render(mDisplay);

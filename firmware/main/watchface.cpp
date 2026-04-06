@@ -1,8 +1,10 @@
 #include "core.h"
 #include "settings.h"
 #include "watchface.h"
+#include "trace.h"
 
 void Watchface::updateCache() {
+  TRACE("watchface_updateCache");
   auto& cache = mSettings.mWatchface.mCache;
   const auto& displ = mSettings.mConst.mDisplay;
   const auto& watch = mSettings.mWatchface;

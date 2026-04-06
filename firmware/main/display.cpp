@@ -12,6 +12,7 @@
 #include "hardware.h"
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
+#include "trace.h"
 
 // The display will remember the config and RAM between runs
 // we can remember them and avoid expensive SPI calls
@@ -259,6 +260,7 @@ void Display::_setRefreshMode(const DisplayMode& mode)
 
 void Display::refresh()
 {
+  TRACE("display_refresh");
   if (!kState.firstRefreshDone) {
     // Draw the backbuffer as well on first refresh
     writeAll(true);
@@ -289,6 +291,7 @@ void Display::refresh()
 }
 
 void Display::waitWhileBusy() {
+  TRACE("display_waitWhileBusy");
   sSem = xSemaphoreCreateBinary();
 
   static constexpr gpio_config_t busy_conf = {
@@ -419,6 +422,7 @@ void Display::writeAllAndRefresh()
 
 void Display::writeAll(bool backbuffer)
 {
+  TRACE("display_writeAll");
   _startTransfer();
   _setRamArea({0, 0, WIDTH, HEIGHT});
   _transferCommand(backbuffer ? 0x26 : 0x24);
