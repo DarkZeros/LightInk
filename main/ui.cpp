@@ -124,13 +124,14 @@ void Number::render(Display& mDisplay) const {
 }
 
 namespace {
-    std::array<std::tuple<bool, const char *, const char *, int, int, int, const char *>, 6> kDateTime = {{
-        {true, " ", "%02d", 2, 0, 23, ""},
-        {false, ":", "%02d", 1, 0, 59, ""},
-        {false, ":", "%02d", 0, 0, 59, "\n\n\n"},
-        {true, "", "%02d", 4, 0, 28, ""},
-        {false, "/", "%02d", 5, 0, 12, ""},
-        {false, "/", "%04d", 6, 1970, 255, "\n\n\n"},
+    std::array<std::tuple<bool, const char *, const char *, int, int, int, int, int, const char *>, 6> kDateTime = {{
+        // center, pre, mid, ind, add, first, last, sub, end
+        {true, " ", "%02d", 2, 0, 0, 23, 3, ""},
+        {false, ":", "%02d", 1, 0, 0, 59, 0, ""},
+        {false, ":", "%02d", 0, 0, 0, 59, 1, "\n\n\n"},
+        {true, "", "%02d", 4, 0, 1, 28, 4, ""},
+        {false, "/", "%02d", 5, 0, 1, 12, 5, ""},
+        {false, "/", "%04d", 6, 1970, 0, 255, -1, "\n\n\n"},
     }};
 }
 
@@ -138,16 +139,28 @@ void DateTime::button_menu() const{
     updownUiState(1, kDateTime.size());
 }
 void DateTime::button_updown(int v) const{
-    //Take current selected item up/down
+    // Take current selected item up/down
     auto selected = curIndex(kDateTime.size());
     auto cur = mTime.getElements();
     auto curCast = reinterpret_cast<uint8_t *>(&cur);
-    auto& val = curCast[std::get<3>(kDateTime[selected])];
-    if (val == 0 && v == -1) {
-        val = std::get<4>(kDateTime[selected]);
-    } else {
-        val += v;
-    }
+
+    // In order to allow recursive entry, make a lambda
+    std::function<void(size_t, int)> updateEntry = [&](size_t index, int add) -> void {
+        uint8_t& val = curCast[std::get<3>(kDateTime[index])];
+        auto first = std::get<5>(kDateTime[index]);
+        if (val == first && add == -1) {
+            val = std::get<6>(kDateTime[index]); // Set to last
+            // When it underflows, will we remove 1 from prev
+            int sub = std::get<7>(kDateTime[index]);
+            if (sub != -1) {
+                updateEntry(sub, -1);
+            }
+        } else {
+            // If the val overflows, it naturally converts to proper date
+            val += add;
+        }
+    };
+    updateEntry(selected, v);
 
     // Calculate diff and set that adjustment
     mTime.adjustTime(static_cast<int32_t>(makeTime(cur)) - mTime.getTimeval().tv_sec - mTime.getMinutesWest() * 60);
@@ -167,7 +180,7 @@ void DateTime::render(Display& mDisplay) const {
     mDisplay.print("\n");
 
     for (auto i=0; i<kDateTime.size(); i++) {
-        auto& [center, pre, mid, ind, add, _, end] = kDateTime[i];
+        auto& [center, pre, mid, ind, add, _first, _last, _sub, end] = kDateTime[i];
         if (center)
             mDisplay.setCursor((mDisplay.WIDTH - w) / 2, mDisplay.getCursorY());
         mDisplay.print(pre);
