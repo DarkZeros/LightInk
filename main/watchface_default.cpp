@@ -1,6 +1,7 @@
 #include "core.h"
 #include "settings.h"
 #include "watchface_default.h"
+#include "trace.h"
 
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include "fonts/DSEG7_Classic_Bold_53.h"
@@ -43,6 +44,7 @@ double getIlluminatedFractionOfMoon(uint64_t t){
 }
 
 std::vector<Rect> DefaultWatchface::render() {
+  TRACE("watchface_default_render");
   std::vector<Rect> rects;
 
   auto& config = mSettings.mWatchface.mConfig;
