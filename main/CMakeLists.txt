@@ -33,6 +33,8 @@ set(srcs
     watchface.cpp
     watchface_default.cpp
 
+    diff_display.cpp
+
     deep_sleep.cpp
     deep_sleep_utils.cpp
 

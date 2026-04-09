@@ -6,6 +6,7 @@
 #include "touch.h"
 #include "watchface.h"
 #include "display.h"
+#include "ui.h"
 
 struct Settings {
     bool mTouchWatchDog {false};

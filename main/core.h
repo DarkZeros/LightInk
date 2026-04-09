@@ -7,6 +7,7 @@
 #include "gps.h"
 #include "radio.h"
 #include "display.h"
+#include "diff_display.h"
 #include "watchface.h"
 #include "battery.h"
 #include "secrets.h"
@@ -41,7 +42,7 @@ public:
     const bool mFirstTimeBoot;
     Spi mSpi;
     Radio mRadio;
-    Display mDisplay;
+    DiffDisplay mDisplay;  // DiffDisplay replaces Display — supports delta computation
     Gps mGps;
     Touch mTouch;
 

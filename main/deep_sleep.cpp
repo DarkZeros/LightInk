@@ -84,7 +84,7 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
 #endif
 
   const auto wakeupCause = esp_wake_stub_get_wakeup_cause();
-  
+
   // If we were waiting for a display finish, we need to complete it first
   if (kDSState.displayBusy) {
     kDSState.displayBusy = false;
@@ -93,27 +93,21 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
     Power::unlock(Power::Flag::Display);
     uSpi::init();
 
-    // Wait until display busy goes off (this will not be needed in next HW versions)
+    // Wait until display busy goes off
     if constexpr (!HW::kHasDisplayBusyWake) {
       auto& busyWait = kDSState.busyWait[getSetDisplayMode()];
       gpio_mode_input<HW::Display::Busy>();
       while(GPIO_INPUT_GET(HW::Display::Busy) != 0) {
         microSleep(busyWait.kWaitStep);
         busyWait.currentWait += busyWait.kWaitStep;
-        busyWait.missedTimes = 0; // Reset it
+        busyWait.missedTimes = 0;
       }
       busyWait.missedTimes = std::min(busyWait.missedTimes, uint8_t(16));
       uint32_t reduceAmount = busyWait.kReduce << ++busyWait.missedTimes;
       busyWait.currentWait -= std::min(busyWait.currentWait / 2, reduceAmount);
     }
 
-    if (kDSState.redrawDec) {
-      kDSState.redrawDec = false;
-      const auto& dec = kSettings.mWatchface.mCache.mDecimal;
-      uSpi::writeArea(dec.data + dec.coord.size()*kSettings.mWatchface.mLastDraw.mMinuteD, dec.coord.x, dec.coord.y, dec.coord.w, dec.coord.h);
-    }
-
-    // Set display to sleep and then we turn off the GPIOs / advance minutes and go to sleep as well
+    // Set display to sleep and then we turn off the GPIOs / advance minutes and go to sleep
     uSpi::hibernate();
     turnOffGpio();
 
@@ -121,7 +115,6 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
       advanceMinutes(busyWait.currentWait);
     }
 
-    // Set stub entry, then going to deep sleep again.
     esp_wake_stub_sleep(&wake_stub_deepsleep);
   }
 
@@ -131,16 +124,9 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
     uint32_t mask;
     touch_ll_read_trigger_status_mask(&mask);
 
-    // If it is the current set light pad button
-    if ((mask >> kDSState.lightPad) & 1){
-      // LED is powered from VDD, and we need to rise it to 3.3V,
-      // because 1.9V is too low for the LED to light up
+    if ((mask >> kDSState.lightPad) & 1) {
       Light::toggle();
-
-      // esp_rom_delay_us(1000); // Small delay to avoid the evet to be too quick for the HW
-      touch_ll_clear_trigger_status_mask(); // This will consume the touch
-
-      // Go back to sleep, don´t touch the timer, if the user enters menu, then light will stay on
+      touch_ll_clear_trigger_status_mask();
       esp_wake_stub_sleep(&wake_stub_deepsleep);
     }
     // Wake up, touch needs to handle by the Main code
@@ -149,19 +135,21 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
   }
 
   // Check if we should just do normal wakeup
-  // If it is not a timer wakeup, return to handle on the Main code
-  // 8 for timer // 256 for touch
   if (wakeupCause != 8 || kDSState.minutes <= 0) {
     esp_default_wake_deep_sleep();
     return;
   }
 
-  // Turn on high power mode since it makes display use less power
-  // Display boost uses -/+ 15 V, it is better 4V -> 3V -> 15V than 4V -> 1.9V -> 15V
-  // It will take around 125us * 0.1V, for 1.4V ramp = 1.7ms, use 1ms of the reset
-  Power::lock(Power::Flag::Display);
+  // Check if we have a pre-computed delta to apply
+  if (kDSState.mDeltaIndex >= kDSState.mDeltaCount ||
+      !kDSState.mDeltas[kDSState.mDeltaIndex].valid()) {
+    // No more pre-computed frames — do a full CPU wakeup to recompute
+    esp_default_wake_deep_sleep();
+    return;
+  }
 
-  // Turn off the light if it is on when we do a normal update
+  // Turn on high power mode for display
+  Power::lock(Power::Flag::Display);
   Light::off();
 
   // Reset display to wake it up
@@ -170,46 +158,52 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
 #endif
   gpio_mode_output<HW::Display::Res>();
   GPIO_OUTPUT_SET(HW::Display::Res, 0);
-  esp_rom_delay_us(1'000); // HW 10 suspiciusly is 2X this time ? CHECK!
+  esp_rom_delay_us(1'000);
   GPIO_OUTPUT_SET(HW::Display::Res, 1);
 #if (HW_VERSION >= 10)
   SET_PERI_REG_MASK(RTC_CNTL_PAD_HOLD_REG, descRes.hold_force);
 #endif
 
-  // Calculate the areas to update based on time and watchface states
-  const auto u = kDSState.currentMinutes % 10;
-  const auto d = kDSState.currentMinutes / 10;
-
-  auto& last = kSettings.mWatchface.mLastDraw;
+  // Fetch the current delta frame
+  const DeltaFrame& frame = kDSState.mDeltas[kDSState.mDeltaIndex];
 
   uSpi::init();
-  if (u != last.mMinuteU[0]) {
-    // Write minute U
-    const auto& uni = kSettings.mWatchface.mCache.mUnits;
-    uSpi::writeArea(uni.data + uni.coord.size()*u, uni.coord.x, uni.coord.y, uni.coord.w, uni.coord.h);
-    last.mMinuteU[0] = last.mMinuteU[1];
-    last.mMinuteU[1] = u;
+
+  // Send the delta bytes directly to the display via SPI.
+  // The delta payload contains triplets: (offset_lo, offset_hi, value).
+  // We iterate through and send each changed byte to its display location.
+  {
+    constexpr size_t kEntrySize = 3;
+    const uint8_t* p   = frame.mPayload;
+    const uint8_t* end = frame.mPayload + frame.mPayloadSize;
+
+    while (p + kEntrySize <= end) {
+      uint16_t offset = static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
+      uint8_t  value  = p[2];
+      p += kEntrySize;
+
+      // Convert buffer offset to display coordinates
+      uint8_t row    = offset / Display::WB_BITMAP;
+      uint8_t colByte = offset % Display::WB_BITMAP;
+      uint8_t x      = colByte * 8;
+
+      // Send this single byte to the display
+      uSpi::writeArea(&value, x, row, 8, 1);
+    }
   }
-  if (d != last.mMinuteD) {
-    // Write minute D + repeat it in the display hibernate
-    const auto& dec = kSettings.mWatchface.mCache.mDecimal;
-    uSpi::writeArea(dec.data + dec.coord.size()*d, dec.coord.x, dec.coord.y, dec.coord.w, dec.coord.h);
-    last.mMinuteD = d;
-    kDSState.redrawDec = true;
-  }
+
+  // Advance to next frame
+  kDSState.mDeltaIndex++;
+
   uSpi::refresh();
   turnOffGpio();
   kDSState.displayBusy = true;
 
   if constexpr (HW::kHasDisplayBusyWake) {
-    // Just need to go back to sleep the correct amount
-    // The display hibernation will happen without affecting the timer
     advanceMinutes(0);
   } else {
-    // Set wakeup timer when we guess display will finish refreshing, to put display to hibernation
     esp_wake_stub_set_wakeup_time(busyWait.currentWait);
   }
 
-  // Set stub entry, then going to deep sleep again.
   esp_wake_stub_sleep(&wake_stub_deepsleep);
 }
