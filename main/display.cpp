@@ -18,6 +18,7 @@
 // we can remember them and avoid expensive SPI calls
 static RTC_DATA_ATTR struct DisplayState {
   bool initialized : 1 {false};
+  bool hibernated : 1 {true};
   bool fullMode : 1 {false};
   bool firstRefreshDone : 1 {false};
   bool darkBorder : 1 {false};
@@ -79,14 +80,7 @@ Display::Display() : Adafruit_GFX(WIDTH, HEIGHT) {
   digitalWrite(HW::Display::Res, HIGH);
   
   // Reset HW / Exit Deep Sleep
-  if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
-    rtc_gpio_hold_dis((gpio_num_t)HW::Display::Res);
-  gpio_set_level((gpio_num_t)HW::Display::Res, LOW);
-  delay(1);
-  gpio_set_level((gpio_num_t)HW::Display::Res, HIGH); // THE HAT BOARD NEEDS output high
-  //pinMode(HW::Display::Res, INPUT_PULLUP);
-  if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
-    rtc_gpio_hold_en((gpio_num_t)HW::Display::Res);
+  wakeup();
 
   // Display requires ISR service for busy pin
   gpio_intr_disable((gpio_num_t)HW::Display::Busy);
@@ -430,8 +424,25 @@ void Display::writeAll(bool backbuffer)
   _endTransfer();
 }
 
+void Display::wakeup()
+{
+  if (!kState.hibernated)
+    return;
+
+  if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
+    rtc_gpio_hold_dis((gpio_num_t)HW::Display::Res);
+  gpio_set_level((gpio_num_t)HW::Display::Res, LOW);
+  delay(1);
+  gpio_set_level((gpio_num_t)HW::Display::Res, HIGH); // THE HAT BOARD NEEDS output high
+  //pinMode(HW::Display::Res, INPUT_PULLUP);
+  if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
+    rtc_gpio_hold_en((gpio_num_t)HW::Display::Res);
+}
 void Display::hibernate()
 {
+  if (kState.hibernated)
+    return;
+
   _startTransfer();
   _transferCommand(0x10); // change deep sleep mode
   _transfer(0b01);  // mode 1 (RAM reading allowed)

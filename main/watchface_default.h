@@ -4,9 +4,8 @@
 
 class DefaultWatchface : public Watchface {
 public:
-    using Watchface::Watchface; // Forward the constructor
-
-    void draw(Display& gfx,
-              const WatchfaceState* prev,
-              const WatchfaceState& next) override;
+  using Watchface::Watchface; // Forward the constructor
+  void draw(Display& gfx,
+            const std::optional<WatchfaceState> prev,
+            const WatchfaceState& next) override;
 };

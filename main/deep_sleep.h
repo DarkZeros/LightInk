@@ -7,10 +7,10 @@
 #include "diff_display.h"
 #include "hardware.h"
 
-static constexpr auto kMaxDeltaData = 1 * 1024;
+static constexpr auto kMaxDeltaData = 2 * 1024; // Max 6kB, we do not need that much
 
 struct DeepSleepState {
-  // This is needed because the HW pin is not properly wired to a RTC GPIO
+  // This is needed because the HW pin was not properly wired to a RTC GPIO
   [[no_unique_address]] struct BusyWait {
     constexpr static auto kStartWait = 25'000u; // Super low value to start with
     constexpr static auto kReduce = 500u;
@@ -29,7 +29,7 @@ struct DeepSleepState {
   // Light
   uint8_t lightPad {0};
   
-  // Pre-computed delta frames for the wake stub to apply.
+  // Pre-computed delta frames for the wake stub to apply in order
   uint32_t mDeltaOffset {0};
   uint8_t mDeltasLeft {0};
   uint8_t mDeltaData[kMaxDeltaData];

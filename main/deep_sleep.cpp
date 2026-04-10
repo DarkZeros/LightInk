@@ -74,6 +74,43 @@ void RTC_IRAM_ATTR advanceMinutes(uint32_t minus) {
   esp_wake_stub_set_wakeup_time(minutes * 60'000'000 - minus);
 }
 
+void RTC_IRAM_ATTR sendDelta() {
+  // Fetch the current delta data
+  const auto offset = kDSState.mDeltaOffset;
+  auto data = std::span<const uint8_t>(&kDSState.mDeltaData[offset], kMaxDeltaData - offset);
+
+  if (data.size() < 2)
+    return;
+
+  // Number of blocks
+  uint16_t len = data[0] | (data[1] << 8);
+  data = data.subspan(2);
+
+  constexpr uint32_t stride = Display::WIDTH / 8;
+
+  uint32_t i = 0; // linear byte index
+
+  for (uint16_t block = 0; block < len; ++block) {
+    uint8_t match = data[0];
+    uint8_t miss  = data[1];
+
+    // Skip unchanged bytes
+    i += match;
+
+    if (miss != 0) {
+      // Set cursor
+      uSpi::setX(static_cast<uint8_t>(i % stride));
+      uSpi::setY(static_cast<uint8_t>(i / stride));
+
+      // Write RAM
+      uSpi::command(0x24);
+      uSpi::transfer(data.data() + 2, miss);
+    }
+
+    data = data.subspan(2 + miss);
+  }
+}
+
 // wake up stub function stored in RTC memory
 void RTC_IRAM_ATTR wake_stub_deepsleep(void)
 {
@@ -106,6 +143,12 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
       uint32_t reduceAmount = busyWait.kReduce << ++busyWait.missedTimes;
       busyWait.currentWait -= std::min(busyWait.currentWait / 2, reduceAmount);
     }
+
+    // Draw again to the backbuffer
+    sendDelta();
+
+    // Advance to next frame
+    kDSState.mDeltasLeft--;
 
     // Set display to sleep and then we turn off the GPIOs / advance minutes and go to sleep
     uSpi::hibernate();
@@ -140,10 +183,8 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
     return;
   }
 
-  // Check if we have a pre-computed delta to apply
-  if (kDSState.mDeltaIndex >= kDSState.mDeltaCount ||
-      !kDSState.mDeltas[kDSState.mDeltaIndex].valid()) {
-    // No more pre-computed frames — do a full CPU wakeup to recompute
+  // Check if we have a pre-computed delta to apply, or do a full CPU wakeup to recompute
+  if (kDSState.mDeltasLeft == 0) {
     esp_default_wake_deep_sleep();
     return;
   }
@@ -164,37 +205,8 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
   SET_PERI_REG_MASK(RTC_CNTL_PAD_HOLD_REG, descRes.hold_force);
 #endif
 
-  // Fetch the current delta frame
-  const DeltaFrame& frame = kDSState.mDeltas[kDSState.mDeltaIndex];
-
   uSpi::init();
-
-  // Send the delta bytes directly to the display via SPI.
-  // The delta payload contains triplets: (offset_lo, offset_hi, value).
-  // We iterate through and send each changed byte to its display location.
-  {
-    constexpr size_t kEntrySize = 3;
-    const uint8_t* p   = frame.mPayload;
-    const uint8_t* end = frame.mPayload + frame.mPayloadSize;
-
-    while (p + kEntrySize <= end) {
-      uint16_t offset = static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
-      uint8_t  value  = p[2];
-      p += kEntrySize;
-
-      // Convert buffer offset to display coordinates
-      uint8_t row    = offset / Display::WB_BITMAP;
-      uint8_t colByte = offset % Display::WB_BITMAP;
-      uint8_t x      = colByte * 8;
-
-      // Send this single byte to the display
-      uSpi::writeArea(&value, x, row, 8, 1);
-    }
-  }
-
-  // Advance to next frame
-  kDSState.mDeltaIndex++;
-
+  sendDelta();
   uSpi::refresh();
   turnOffGpio();
   kDSState.displayBusy = true;

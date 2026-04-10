@@ -77,6 +77,7 @@ public:
   void setRefreshMode(DisplayMode mode);
   DisplayMode getRefreshMode() const;
   void refresh();
+  void wakeup();
   void hibernate();
   void waitWhileBusy();
   void writeRect(Rect rect);

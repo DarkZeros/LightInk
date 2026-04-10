@@ -114,6 +114,16 @@ namespace uSpi {
     GPIO_OUTPUT_SET(HW::Display::Dc, 1);
   }
 
+  void RTC_IRAM_ATTR setX(uint8_t x) {
+    command(0x4e); // X start counter
+    transfer(x);
+  }
+  void RTC_IRAM_ATTR setY(uint8_t y) {
+    command(0x4f); // Y start counter
+    transfer(y);
+    //_transfer(0); // No need to write this, default is 0
+  };
+
   void RTC_IRAM_ATTR setRamArea(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
     command(0x44);  // X start & end positions (Byte)
     transfer(x / 8);
@@ -123,11 +133,8 @@ namespace uSpi {
     transfer(0);
     transfer((y + h - 1));
     //_transfer(0); // No need to write this, default is 0
-    command(0x4e); // X start counter
-    transfer(x / 8);
-    command(0x4f); // Y start counter
-    transfer(y);
-    //_transfer(0); // No need to write this, default is 0
+    setX(x / 8);
+    setY(y);
   };
 
   void RTC_IRAM_ATTR writeArea(const uint8_t* ptr, uint8_t x, uint8_t y, uint8_t w, uint8_t h) {

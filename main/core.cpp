@@ -195,113 +195,28 @@ Core::Core()
     mDisplay.setTextColor(0xFF);
 
     // Show watch face or menu ?
+    std::unique_ptr<Watchface> wf;
     if (kSettings.mUi.mDepth < 0) {
         mDisplay.setRefreshMode(kSettings.mDisplay.mWatchLut);
 
-        // ----------------------------------------------------------------
-        // Watchface rendering + delta pre-computation
-        // ----------------------------------------------------------------
-        std::unique_ptr<Watchface> wf;
         switch(kSettings.mWatchface.mType) {
             default:
                 wf = std::make_unique<DefaultWatchface>(kSettings, kSettings.mWatchface, *this);
                 break;
         }
+        auto state = makeState(*this);
+        wf->draw(mDisplay, kSettings.mWatchface.mLastState, state);
+        kSettings.mWatchface.mLastState = state;
 
-        // Build the current state
-        WatchfaceState currentState = makeState(*this);
-
-        // Determine if this is a first-ever draw (no valid previous buffer)
-        // We use mDeltaCount == 0 as a proxy for "never drawn before".
-        // On first draw, prev == nullptr → full redraw.
-        const bool firstDraw = (kDSState.mDeltaCount == 0 && kDSState.mDeltaIndex == 0);
-
-        // Draw the current frame into the display buffer
-        mDisplay.fillScreen(0);
-        if (firstDraw) {
-            wf->draw(mDisplay, nullptr, currentState);
-        } else {
-            // We have a previous buffer in kDSState.mDisplayBuffer.
-            // Reconstruct a "prev" state — we don't store the full prev WatchfaceState,
-            // but we can pass nullptr here and let the watchface do a full redraw
-            // into the existing buffer.  The diff will still be minimal because
-            // the buffer already has the previous frame content.
-            // For a proper incremental draw, we'd need to store the prev state too.
-            // For now, do a full redraw — the delta will capture only what changed.
-            wf->draw(mDisplay, nullptr, currentState);
-        }
-
-        // Write the current frame to the display and refresh
-        mDisplay.writeAllAndRefresh();
-        mDisplay.writeAll(); // Write to back buffer too for partial updates
-
-        // ----------------------------------------------------------------
-        // Pre-compute delta frames for the next `stepSize` minutes
-        // ----------------------------------------------------------------
-
-        // Calculate stepSize (same logic as below, duplicated here for clarity)
-        auto stepSize = [&] {
-            if (kSettings.mPower.mNight && mNow.Hour < 7)
-                return 5;
-            if (!kSettings.mPower.mAuto)
-                return 1;
-            if (mBattery.mCurPercent < 100) {
-                return 5;
-            } else if (mBattery.mCurPercent < 200) {
-                return 4;
-            } else if (mBattery.mCurPercent < 500) {
-                return 2;
-            }
-            return 1;
-        }();
-
-        const uint8_t framesToCompute = std::min(stepSize, (int)kMaxDeltaFrames);
-
-        // Reset delta state
-        kDSState.mDeltaIndex = 0;
-        kDSState.mDeltaCount = 0;
-
-        // Invalidate all frames
-        for (auto& f : kDSState.mDeltas)
-            f.invalidate();
-
-        // Simulate future minutes and compute deltas
-        WatchfaceState prevState = currentState;
-        SimpleByteCompressor compressor;
-
-        for (uint8_t i = 0; i < framesToCompute; ++i) {
-            // Advance simulated time by one minute
-            WatchfaceState nextState = prevState;
-            advanceOneMinute(nextState.mTime);
-
-            // Snapshot the current buffer as "previous"
-            mDisplay.enableDiff();
-
-            // Draw the next frame (incremental — only changed parts)
-            wf->draw(mDisplay, &prevState, nextState);
-
-            // Compute and store the delta
-            bool ok = mDisplay.getDelta(compressor, kDSState.mDeltas[i]);
-            if (!ok) {
-                // Delta too large — stop pre-computing, wake stub will fall back to CPU
-                ESP_LOGE("delta", "frame %d overflow, stopping pre-compute", i);
-                break;
-            }
-
-            ESP_LOGI("delta", "frame %d: %d bytes (%d entries)",
-                     i, kDSState.mDeltas[i].mPayloadSize,
-                     kDSState.mDeltas[i].mPayloadSize / 3);
-
-            kDSState.mDeltaCount = i + 1;
-            prevState = nextState;
-        }
+        // TODO: Draw 1 frame, then display it in a task + hibernate, in the mean time draw the rest
+        mDisplay.writeAllAndRefresh(); 
+        mDisplay.hibernate();
 
         Light::off(); // Always turn off light exiting the Menus
     } else {
         mDisplay.setRefreshMode(kSettings.mDisplay.mMenuLut);
-        // Invalidate delta cache when entering menus
-        kDSState.mDeltaCount = 0;
-        kDSState.mDeltaIndex = 0;
+        // Invalidate Watchface state when entering menus
+        kSettings.mWatchface.mLastState.reset();
         TRACE("menu_render");
         std::visit([&](auto& e){
             if constexpr (has_render<decltype(e), Display&>::value) {
@@ -311,12 +226,13 @@ Core::Core()
                 mDisplay.setTextColor(1, 0);
                 mDisplay.println("UNIMPLEMENTED");
                 mDisplay.println("PRESS BACK");
+                mDisplay.writeAllAndRefresh();
             }
         }, findUi());
+        mDisplay.hibernate();
     }
 
     // Finish display & pending tasks, then setup touch
-    mDisplay.hibernate();
     finishTasks();
     mTouch.enable();
 
@@ -336,27 +252,6 @@ Core::Core()
         return 1;
     }();
 
-    // Calc next full wake (alarms/NextUpdates) and how much to sleep
-    auto nextFullWake = 60;
-    auto secondsWait = 60 - mNow.Second;
-    if (mNextUpdate) {
-        auto seconds = *mNextUpdate;
-        if (seconds < 60) {
-            secondsWait = seconds;
-            nextFullWake = mNow.Minute + 1; // Wake instantly
-        } else {
-            nextFullWake = mNow.Minute + seconds / 60;
-        }
-        kDSState.minutes = (*mNextUpdate + secondsWait) / 60;
-        ESP_LOGE("Early Wake", "minutes %d seconds %d", kDSState.minutes, secondsWait);
-    }
-    auto firstMinutesSleep = stepSize - mNow.Minute % stepSize;
-    auto nextPartialWake = firstMinutesSleep + mNow.Minute;
-    // In case the step overflows, we need to chop it, and wake up earlier
-    // kDSState.minutes will be exactly 0 after this trim
-    if (nextPartialWake > nextFullWake)
-        firstMinutesSleep -= nextPartialWake - nextFullWake;
-
     // ESP_LOGE("", "nextFullWake %d firstMinutesSleep %d nextPartialWake %d", nextFullWake, firstMinutesSleep, nextPartialWake);
     if constexpr (HW::kHasLora) {
         esp_sleep_enable_ext1_wakeup(1ULL << HW::Lora::Dio1, ESP_EXT1_WAKEUP_ANY_HIGH);
@@ -366,6 +261,27 @@ Core::Core()
 
     // We can only run wakeupstub when on watchface mode
     if (kSettings.mUi.mDepth < 0) {
+        // Calc next full wake (alarms/NextUpdates) and how much to sleep
+        auto nextFullWake = 60;
+        auto secondsWait = 60 - mNow.Second;
+        if (mNextUpdate) {
+            auto seconds = *mNextUpdate;
+            if (seconds < 60) {
+                secondsWait = seconds;
+                nextFullWake = mNow.Minute + 1; // Wake instantly
+            } else {
+                nextFullWake = mNow.Minute + seconds / 60;
+            }
+            kDSState.minutes = (*mNextUpdate + secondsWait) / 60;
+            ESP_LOGE("Early Wake", "minutes %d seconds %d", kDSState.minutes, secondsWait);
+        }
+        auto firstMinutesSleep = stepSize - mNow.Minute % stepSize;
+        auto nextPartialWake = firstMinutesSleep + mNow.Minute;
+        // In case the step overflows, we need to chop it, and wake up earlier
+        // kDSState.minutes will be exactly 0 after this trim
+        if (nextPartialWake > nextFullWake)
+            firstMinutesSleep -= nextPartialWake - nextFullWake;
+            
         kDSState.currentMinutes = mNow.Minute + firstMinutesSleep;
         kDSState.minutes = nextFullWake - mNow.Minute - firstMinutesSleep;
         // ESP_LOGE("", "min %d step %d wait %ld", kDSState.minutes, stepSize, kDSState.updateWait);

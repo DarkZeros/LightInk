@@ -4,9 +4,9 @@
 #include "battery.h"
 #include "time.h"
 #include "touch.h"
+#include "ui.h"
 #include "watchface.h"
 #include "display.h"
-#include "ui.h"
 
 struct Settings {
     bool mTouchWatchDog {false};
