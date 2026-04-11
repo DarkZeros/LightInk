@@ -84,13 +84,14 @@ void DefaultWatchface::draw(Display& gfx,
   }
   // ---- Moon ----
   if (config.mMoon) {
+    constexpr auto center = std::pair{50, 150};
+    constexpr auto radius = 30;
+    
     // Moon phase changes slowly; always redraw for simplicity
     bool color = mSettings.mDisplay.mInvert; // mSettings is the full Settings struct
     auto frac = getIlluminatedFractionOfMoon(mCore.mTime.getTimeval().tv_sec);
-    gfx.drawMoonFast(frac, 50, 150, 30, !color, color);  
-    constexpr auto center = std::pair{50, 150};
-    constexpr auto radius = 30;
-    gfx.drawCircle(center.first, center.second, 30, 1);
+    gfx.drawMoonFast(frac, center.first, center.second, radius, !color, color);  
+    gfx.drawCircle(center.first, center.second, radius, 1);
     gfx.setFont(NULL);
     gfx.setCursor(40, 185);
     gfx.printf("%.2f", frac);

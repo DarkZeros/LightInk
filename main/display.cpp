@@ -437,6 +437,8 @@ void Display::wakeup()
   //pinMode(HW::Display::Res, INPUT_PULLUP);
   if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
     rtc_gpio_hold_en((gpio_num_t)HW::Display::Res);
+
+  kState.hibernated = false;
 }
 void Display::hibernate()
 {
@@ -449,6 +451,8 @@ void Display::hibernate()
   // _transfer(0b11); // mode 2 (no RAM reading allowed) // Doesn't work... why?
   // _transfer(0b10); // mode 2 as well?
   _endTransfer();
+
+  kState.hibernated = true;
 }
 
 Rect Display::getTextRect(const char * str, int16_t xc, int16_t yc) {

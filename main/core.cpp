@@ -209,7 +209,8 @@ Core::Core()
         kSettings.mWatchface.mLastState = state;
 
         // TODO: Draw 1 frame, then display it in a task + hibernate, in the mean time draw the rest
-        mDisplay.writeAllAndRefresh(); 
+        mDisplay.writeAllAndRefresh();
+        mDisplay.writeAll(); // Write again to the backbuffer?
         mDisplay.hibernate();
 
         Light::off(); // Always turn off light exiting the Menus
@@ -229,10 +230,10 @@ Core::Core()
                 mDisplay.writeAllAndRefresh();
             }
         }, findUi());
-        mDisplay.hibernate();
     }
 
     // Finish display & pending tasks, then setup touch
+    mDisplay.hibernate();
     finishTasks();
     mTouch.enable();
 
