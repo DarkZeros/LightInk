@@ -119,8 +119,8 @@ struct HW_3 : public HW_2 {
 // Minor changes to accomodate HW_3 issues into a smaller board
 struct HW_4 : public HW_3 {
     constexpr static uint8_t kVersion = 4;
-    // constexpr static bool kHasLora = false;
-    // constexpr static bool kHasGps = false;
+    constexpr static bool kHasLora = false;
+    constexpr static bool kHasGps = false;
     // constexpr static bool kHasDisplayBusyWake = false;
     // constexpr static bool kHasLowVoltage = false;
 

@@ -579,6 +579,30 @@ void Display::drawFastHLine(int16_t x, int16_t y, int16_t w,
     w = width() - x;
   }
 
+  // switch(getRotation()) {
+  //   case 0:
+  //     drawFastRawHLine(x, y, w, color);
+  //     break;
+  //   case 1: {
+  //     int16_t t = x;
+  //     x = WIDTH - 1 - y;
+  //     y = t;
+  //     drawFastRawVLine(x, y, w, color);
+  //   } break;
+  //   case 2: {
+  //     x = WIDTH - 1 - x;
+  //     y = HEIGHT - 1 - y;
+  //     x -= w - 1;
+  //     drawFastRawHLine(x, y, w, color);
+  //   } break;
+  //   case 3: {
+  //     int16_t t = x;
+  //     x = y;
+  //     y = HEIGHT - 1 - t;
+  //     y -= w - 1;
+  //     drawFastRawVLine(x, y, w, color);
+  //   } break;
+  // }
   if (getRotation() == 0) {
     drawFastRawHLine(x, y, w, color);
   } else if (getRotation() == 1) {

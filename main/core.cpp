@@ -86,7 +86,7 @@ Core::Core()
     // Queue the rest of the first boot for later (GPS, LORA, NTP, Touch)
     mTasks.emplace_back(std::async(std::launch::deferred, [&]{
         // Trigger NTP, if wifi is available, it will set time
-        NTPSync();
+        // NTPSync();
 
         // Try to get GPS location, to setup time/location
         if constexpr (HW::kHasGps) {
@@ -205,6 +205,10 @@ Core::Core()
                 break;
         }
         auto state = makeState(*this);
+        wf->draw(mDisplay, kSettings.mWatchface.mLastState, state);
+        wf->draw(mDisplay, kSettings.mWatchface.mLastState, state);
+        wf->draw(mDisplay, kSettings.mWatchface.mLastState, state);
+        wf->draw(mDisplay, kSettings.mWatchface.mLastState, state);
         wf->draw(mDisplay, kSettings.mWatchface.mLastState, state);
         kSettings.mWatchface.mLastState = state;
 
