@@ -182,15 +182,15 @@ void Display::_setCustomLut(const DisplayMode& mode) {
 void Display::_setRamArea(const Rect& rect){
   auto& [x, y, w, h] = rect;
   _transferCommand(0x44);  // X start & end positions (Byte)
-  _transfer(x / 8);
-  _transfer((x + w - 1) / 8);
+  _transfer(x >> 3);
+  _transfer((x + w - 1) >> 3);
   _transferCommand(0x45); // Y start & end positions (Line)
   _transfer(y);
   _transfer(0);
   _transfer(y + h - 1);
   //_transfer(0); // No need to write this, default is 0
   _transferCommand(0x4e); // X start counter
-  _transfer(x / 8);
+  _transfer(x >> 3);
   _transferCommand(0x4f); // Y start counter
   _transfer(y);
   //_transfer(0); // No need to write this, default is 0
@@ -371,11 +371,11 @@ void Display::alignRect(Rect& rect) const
   auto& [x, y, w, h] = rect;
 
   // Align
-  x -= x % 8; // byte boundary
+  x = x & ~7; // byte boundary
   w = WIDTH - x < w ? WIDTH - x : w; // limit
   h = HEIGHT - y < h ? HEIGHT - y : h; // limit
 
-  w = 8 * ((w + 7) / 8); // byte boundary, bitmaps are padded
+  w = (w + 7) & ~7; // byte boundary, bitmaps are padded
 
   w = x + w < WIDTH ? w : WIDTH - x; // limit
   h = y + h < HEIGHT ? h : HEIGHT - y; // limit
@@ -386,11 +386,11 @@ void Display::writeAlignedRect(const Rect& rect)
   _startTransfer();
   _setRamArea(rect);
   _transferCommand(0x24);
-  auto xst = rect.x / 8;
+  auto xst = rect.x >> 3;
   for (auto i = 0; i < rect.h; i++)
   {
     auto yoffset = (rect.y + i) * WB_BITMAP;
-    SPI.writeBytes(buffer + xst + yoffset, rect.w / 8);
+    SPI.writeBytes(buffer + xst + yoffset, rect.w >> 3);
   }
   _endTransfer();
 }
@@ -401,7 +401,7 @@ void Display::writeAlignedRectPacked(const uint8_t* ptr, const Rect& rect)
   _setRamArea(rect);
   // ESP_LOGE("area","%p, %d %d %d %d, size %d", ptr, x, y, w, h, ((uint16_t)h) * w / 8);
   _transferCommand(0x24);
-  SPI.writeBytes(ptr, ((uint16_t)rect.h) * rect.w / 8);
+  SPI.writeBytes(ptr, ((uint16_t)rect.h * rect.w) >> 3);
   _endTransfer();
 }
 
@@ -645,7 +645,7 @@ void Display::drawFastRawHLine(int16_t x, int16_t y, int16_t w,
 
   // do the next remainingWidthBits bits
   if (remainingWidthBits > 0) {
-    size_t remainingWholeBytes = remainingWidthBits / 8;
+    size_t remainingWholeBytes = remainingWidthBits >> 3;
     size_t lastByteBits = remainingWidthBits & 7;
     uint8_t wholeByteColor = color > 0 ? 0xFF : 0x00;
 
