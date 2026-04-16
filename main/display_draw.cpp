@@ -107,7 +107,7 @@ void Display::fillEllipseDifference(int x, int y, uint8_t width1, uint8_t width2
 // Takes around 220-280us vs 430us the original one!
 void Display::drawMoonFast(float p, int x, int y, uint8_t r, uint16_t on, uint16_t off)
 {
-  bool color = p <= 50;
+  bool color = p <= 50 ? on : off;
   auto w = p < 50 ? p : p - 50;
   bool left = w >= 25;
   w = w < 25 ? 25 - w : w - 25;
