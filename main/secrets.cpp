@@ -2,7 +2,9 @@
 // DO NOT SUBMIT IT TO THE REPOSITORY
 
 #include <vector>
+#include "secrets.h"
 #include "radio.h"
+
 
 // DUMMY PLACEHOLDERS TO ALLOW BUILDING
 const std::vector<Signal::Group> kSignals = {
@@ -18,4 +20,4 @@ const std::vector<Signal::Group> kSignals = {
     }},
 };
 
-const std::pair<std::string, std::string> kWifiConfig = {"asd", "asd"};
+const WifiNetworks kWifiNetworks = {{"asd", "asd"}};
