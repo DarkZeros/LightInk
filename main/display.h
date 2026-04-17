@@ -29,7 +29,7 @@ struct DisplaySettings {
   bool mDarkBorder {false};
   uint8_t mRotation {2};
   DisplayMode mMenuLut {FAST};
-  DisplayMode mWatchLut {QUICK};
+  DisplayMode mWatchLut {FAST};
 };
 
 extern int getSetDisplayMode();
@@ -49,7 +49,7 @@ public:
   static constexpr uint8_t HEIGHT = WIDTH;
   static constexpr uint8_t WB_BITMAP = (WIDTH + 7) / 8;
 
-  uint8_t buffer[WB_BITMAP * HEIGHT];
+  static RTC_FAST_ATTR uint8_t buffer[WB_BITMAP * HEIGHT];
 
   Display();
 

@@ -27,6 +27,8 @@ static RTC_DATA_ATTR struct DisplayState {
   DisplayMode mode {DisplayMode::FULL};
 } kState;
 
+static RTC_FAST_ATTR uint8_t Display::buffer[WB_BITMAP * HEIGHT] = {};
+
 int RTC_IRAM_ATTR getSetDisplayMode() { return kState.mode; };
 
 namespace {

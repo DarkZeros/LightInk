@@ -7,7 +7,7 @@
 #include "diff_display.h"
 #include "hardware.h"
 
-static constexpr auto kMaxDeltaData = 2 * 1024; // Max 6kB, we do not need that much
+static constexpr auto kMaxDeltaData = 1 * 512; // Max 6kB, we do not need that much
 
 struct DeepSleepState {
   // This is needed because the HW pin was not properly wired to a RTC GPIO
