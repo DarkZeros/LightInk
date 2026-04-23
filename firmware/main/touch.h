@@ -6,6 +6,7 @@
 #include <magic_enum.hpp>
 
 #include "hardware.h"
+#include "input.h"
 
 enum MeasureRate {
     // _125ms = 1, // Extremely fast
@@ -38,29 +39,20 @@ struct TouchSettings {
   std::optional<Setup> mSetup{};
 };
 
-class Touch {
+class Touch : public InputInterface {
 private:
     TouchSettings& mSettings;
 public:
     explicit Touch(TouchSettings& settings);
 
-    void initialize();
-    void setUp(bool onlyMenuLight);
+    void initialize() override;
+    void setUp(bool onlyMenuLight) override;
 
-    enum Btn {
-        NONE = 0,
-        DOWN = 0b0001,
-        UP   = 0b0010,
-        MENU = 0b0100,
-        BACK = 0b1000,
-        // Alias
-        LIGHT = BACK,
-    };
-    std::vector<uint16_t> readAll() const;
-    Btn read() const;
-    void clear() const;
-    Btn readAndClear() const;
+    std::vector<uint16_t> readAll() const override;
+    Btn read() const override;
+    void clear() const override;
+    Btn readAndClear() const override;
 
-    void enable() const;
-    void disable() const;
+    void enable() const override;
+    void disable() const override;
 };

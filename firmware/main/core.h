@@ -10,10 +10,13 @@
 #include "watchface.h"
 #include "battery.h"
 #include "secrets.h"
+#include "input.h"
 #include "touch.h"
+#include "buttons.h"
 #include "ui.h"
 #include "secrets.h"
 #include "time.h"
+#include "hardware.h"
 
 /* This is the primary class of the project.
  * It has the entry point from deepsleep as well as all
@@ -42,7 +45,9 @@ public:
     Radio mRadio;
     Display mDisplay;
     Gps mGps;
-    Touch mTouch;
+
+    // Input selection based on hardware configuration (compile-time)
+    std::conditional_t<HW::kInputType == InputType::TOUCH, Touch, ButtonInput> mInput;
 
     const tmElements_t& mNow;
     std::optional<UI::Any> mUi; // optional to allow re-generation of complex type

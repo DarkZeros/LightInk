@@ -27,9 +27,9 @@ struct DisplaySettings {
   // Settings that can be changed
   bool mInvert {false};
   bool mDarkBorder {false};
-  uint8_t mRotation {2};
+  uint8_t mRotation {HW::kDefaultDisplayRotation};
   DisplayMode mMenuLut {FAST};
-  DisplayMode mWatchLut {QUICK};
+  DisplayMode mWatchLut {FAST};
 };
 
 extern int getSetDisplayMode();

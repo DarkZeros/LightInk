@@ -193,7 +193,7 @@ UI::Any Core::generateMenus() {
             }
           }
           mDisplay.writeAllAndRefresh();
-          if (mTouch.readAndClear() != Touch::Btn::NONE)
+          if (mInput.readAndClear() != Touch::Btn::NONE)
             break;
         }
         mDisplay.setRefreshMode(oldMode);

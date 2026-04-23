@@ -30,6 +30,8 @@ set(srcs
     menus.cpp
     ui.cpp
 
+    buttons.cpp
+
     watchface.cpp
     watchface_default.cpp
 

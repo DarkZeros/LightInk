@@ -71,15 +71,15 @@ Core::Core()
             mGps.mData.mLocation = Gps::Data::Location{.mLat=51.438412, .mLon=-0.511787};
         }
 
-        // Set up the touch, not enable it yet
-        mTouch.setUp(kSettings.mUi.mDepth < 0);
+        // Set up the input, not enable it yet
+        mInput.setUp(kSettings.mUi.mDepth < 0);
     }));
 
     return true;
 }()}
 , mSpi{}
 , mDisplay{}
-, mTouch{kSettings.mTouch}
+, mInput{kSettings.mTouch}
 , mNow{mTime.getElements()}
 , mUi{generateMenus()}
 {
@@ -120,9 +120,13 @@ Core::Core()
         }
         kSettings.mTouchWatchDog = true;
         break;
-    case ESP_SLEEP_WAKEUP_EXT1: // Used for LoRa reception
-        ESP_LOGE("lora", "ext1 wakeup");
-        mRadio.readLoraPck();
+    case ESP_SLEEP_WAKEUP_EXT1: // Used for LoRa reception, or for Buttonsin Watchy
+        if constexpr (HW::kInputType == InputType::BUTTONS) {
+            handleTouch();
+        } else {
+            ESP_LOGE("lora", "ext1 wakeup");
+            mRadio.readLoraPck();
+        }
         break;
     case ESP_SLEEP_WAKEUP_EXT0: // Used for display busy wakeup
         ESP_LOGE("ext0", "wakeup ?"); // Should never be hit
@@ -132,8 +136,8 @@ Core::Core()
         break;
     }
 
-    // Re-set up the touch if settings have changed
-    mTouch.setUp(kSettings.mUi.mDepth < 0);
+    // Re-set up the input if settings have changed
+    mInput.setUp(kSettings.mUi.mDepth < 0);
 
     // Beep conditions
     const bool hourUpdate = mNow.Minute == 0 && mNow.Second == 0 && wakeup_reason == ESP_SLEEP_WAKEUP_TIMER;
@@ -192,10 +196,10 @@ Core::Core()
         }, findUi());
     }
 
-    // Finish display & pending tasks, then setup touch
+    // Finish display & pending tasks, then setup input
     mDisplay.hibernate();
     finishTasks();
-    mTouch.enable();
+    mInput.enable();
 
     // Calculate stepsize based on battery level or on battery save mode
     auto stepSize = [&] {
@@ -264,7 +268,7 @@ Core::Core()
     // Who is setting this to ON manually ?? Display + LightSleep?
     esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
 
-    mTouch.clear(); // Clear the mask just before entering the sleep
+    mInput.clear(); // Clear the input state just before entering the sleep
 
     esp_deep_sleep_disable_rom_logging();
     esp_deep_sleep_start();
@@ -304,7 +308,7 @@ void Core::handleTouch() {
     kSettings.mTouchWatchDog = false;
 
     // Convert to what button was it
-    Touch::Btn btn = mTouch.readAndClear();
+    Touch::Btn btn = mInput.readAndClear();
     ESP_LOGE("parsed", "%d, %s", btn, std::string(magic_enum::enum_name(btn)).c_str());
 
     auto& ui = kSettings.mUi;
