@@ -31,6 +31,48 @@ uint16_t Battery::readVoltageScaledAveraged() const {
     return av;
 }
 
+#include "esp_sleep.h"
+#include "soc/rtc_cntl_reg.h"
+#include "soc/sens_reg.h"
+#include "soc/rtc_io_reg.h"
+#include "esp32/rom/rtc.h"
+
+// Store results in RTC memory to be read by app later
+RTC_DATA_ATTR uint16_t adcValue;
+
+uint16_t RTC_IRAM_ATTR Battery::readAdc() const {
+    // 1. Power On ADC
+    SENS.sar_meas_wait2.force_xpd_sar = SENS_FORCE_XPD_SAR_PU;
+    
+    // 2. Configure ADC1 (example channel 0)
+    // Directly setting registers to avoid high-level driver calls
+    SENS.sar_read_ctrl.sar1_dig_force = 0; // Switch to RTC
+    SENS.sar_read_ctrl.sar1_read_state = 0; // Reset FSM
+    
+    // 3. Start conversion (ADC1 channel 0)
+    SENS.sar_meas_start1.sar1_en = 1;
+    SENS.sar_meas_start1.meas1_start_sar = 0;
+    SENS.sar_meas_start1.meas1_start_sar = 1;
+
+    // 4. Wait for conversion to finish
+    while (SENS.sar_meas_start1.meas1_done_sar == 0);
+    
+    // 5. Read result
+    adcValue = SENS.sar_meas_start1.meas1_data_sar;
+    
+    // 6. Power Down ADC
+    SENS.sar_meas_wait2.force_xpd_sar = SENS_FORCE_XPD_SAR_PD;
+
+    // Optional: Wake up main CPU if value exceeds threshold
+    if (adcValue > 2000) {
+        esp_default_wake_deep_sleep();
+    }
+
+    // Return to deep sleep
+    clear_rtc_interrupt_flag();
+    rtc_sleep_start();
+}
+
 uint16_t Battery::readVoltageScaled() const {
     // adc_oneshot_unit_handle_t adc_handle;
     // adc_oneshot_unit_init_cfg_t init_config = {
