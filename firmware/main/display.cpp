@@ -13,6 +13,8 @@
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
 
+#include "uspi.h"
+
 // The display will remember the config and RAM between runs
 // we can remember them and avoid expensive SPI calls
 static RTC_DATA_ATTR struct DisplayState {
@@ -38,35 +40,48 @@ void isr(void* ) {
   xSemaphoreGiveFromISR(sSem, &woken);
 }
 
+// SPI related
 void Display::_startTransfer()
 {
-  SPI.beginTransaction(kSpiSettings);
+  if constexpr (kArduinoSPI)
+    SPI.beginTransaction(kSpiSettings);
   gpio_set_level((gpio_num_t)HW::Display::Cs, LOW);
 }
 void Display::_endTransfer()
 {
   gpio_set_level((gpio_num_t)HW::Display::Cs, HIGH);
-  SPI.endTransaction();
+  if constexpr (kArduinoSPI)
+    SPI.endTransaction();
 }
-
 void Display::_transfer(uint8_t value)
 {
-  SPI.write(value);
+  if constexpr (kArduinoSPI) {
+    SPI.write(value);
+  } else {
+    uSpi::write(value);
+  }
 }
-
 void Display::_transfer(const uint8_t* value, size_t size)
 {
-  SPI.writeBytes(value, size);
+  if constexpr (kArduinoSPI) {
+    SPI.writeBytes(value, size);
+  } else {
+    uSpi::write(value, size);
+  }
 }
-
 void Display::_transferCommand(uint8_t c)
 {
   gpio_set_level((gpio_num_t)HW::Display::Dc, LOW);
-  SPI.write(c);
+  _transfer(c);
   gpio_set_level((gpio_num_t)HW::Display::Dc, HIGH);
 }
 
+
 Display::Display() : Adafruit_GFX(WIDTH, HEIGHT) {
+  if constexpr (!kArduinoSPI) {
+    uSpi::init(Display::kOverdriveSPI);
+  }
+
   // Set pins
   pinMode(HW::Display::Cs, OUTPUT);
   pinMode(HW::Display::Dc, OUTPUT);
@@ -390,7 +405,7 @@ void Display::writeAlignedRect(const Rect& rect)
   for (auto i = 0; i < rect.h; i++)
   {
     auto yoffset = (rect.y + i) * WB_BITMAP;
-    SPI.writeBytes(buffer + xst + yoffset, rect.w >> 3);
+    _transfer(buffer + xst + yoffset, rect.w >> 3);
   }
   _endTransfer();
 }
@@ -401,7 +416,7 @@ void Display::writeAlignedRectPacked(const uint8_t* ptr, const Rect& rect)
   _setRamArea(rect);
   // ESP_LOGE("area","%p, %d %d %d %d, size %d", ptr, x, y, w, h, ((uint16_t)h) * w / 8);
   _transferCommand(0x24);
-  SPI.writeBytes(ptr, ((uint16_t)rect.h * rect.w) >> 3);
+  _transfer(ptr, ((uint16_t)rect.h * rect.w) >> 3);
   _endTransfer();
 }
 
@@ -422,7 +437,7 @@ void Display::writeAll(bool backbuffer)
   _startTransfer();
   _setRamArea({0, 0, WIDTH, HEIGHT});
   _transferCommand(backbuffer ? 0x26 : 0x24);
-  SPI.writeBytes(buffer, sizeof(buffer));
+  _transfer(buffer, sizeof(buffer));
   _endTransfer();
 }
 
