@@ -1,7 +1,8 @@
 #pragma once
 
 #include "soc/io_mux_reg.h"
-  
+#include "rom/gpio.h"
+
 #if(HW_VERSION >= 10)
   // Set wakeup timer when we guess display will finish refreshing, to put display to hibernation
   #define GPIO_OUTPUT_SET(gpio_no, bit_value) gpio_output_set(bit_value<<gpio_no, (bit_value ? 0 : 1)<<gpio_no, 1<<gpio_no,0)
