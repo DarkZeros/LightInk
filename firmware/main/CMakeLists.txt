@@ -36,6 +36,8 @@ set(srcs
     deep_sleep.cpp
     deep_sleep_utils.cpp
 
+    uspi.cpp
+
     secrets.cpp
 
     # WIP stuff

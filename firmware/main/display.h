@@ -44,6 +44,7 @@ public:
   static constexpr bool kReduceBoosterTime = false; // Saves ~200ms + Reduce power usage, degrades quality!
   static constexpr bool kFastUpdateTemp = true; // Saves 5ms + FixedSpeedier LUT (300ms update)
   static constexpr bool kOverdriveSPI = false; // Uses a 25% faster SPI out of spec
+  static constexpr bool kArduinoSPI = false; // Use the arduino SPI or the uSPI
 
   static constexpr uint8_t WIDTH = 200;
   static constexpr uint8_t HEIGHT = WIDTH;

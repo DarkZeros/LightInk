@@ -26,7 +26,6 @@
 
 #include "esp_attr.h"
 #include "soc/rtc_periph.h"
-#include "rom/gpio.h"
 
 RTC_DATA_ATTR DeepSleepState kDSState;
 
