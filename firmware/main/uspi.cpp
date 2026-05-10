@@ -12,7 +12,7 @@ namespace uSpi {
 
     // Set
     dev.clock.val = overdrive ? clockDivOver : clockDiv;
-    dev.user.usr_mosi = 1;
+    dev.user.usr_mosi = 1; // By default, enable the MISO step
     dev.user.usr_miso = 0; // We do not want to read anything
     dev.user.doutdin = 1;
     dev.user.cs_setup = 1;
@@ -58,61 +58,53 @@ namespace uSpi {
 #endif
   }
 
-  void write(const void *data_in, uint32_t len) {
-    size_t longs = len >> 2;
-    if (len & 3) {
-      longs++;
-    }
-    uint32_t *data = (uint32_t *)data_in;
-    size_t c_len = 0, c_longs = 0;
-
-    while (len) {
-      c_len = (len > 64) ? 64 : len;
-      c_longs = (longs > 16) ? 16 : longs;
-#if CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32
-      dev.mosi_dlen.usr_mosi_dbitlen = (c_len * 8) - 1;
-      dev.miso_dlen.usr_miso_dbitlen = 0;
-#else
-      dev.ms_dlen.ms_data_bitlen = (c_len * 8) - 1;
-#endif
-      for (size_t i = 0; i < c_longs; i++) {
-        dev.data_buf[i] = data[i];
-      }
-#if !defined(CONFIG_IDF_TARGET_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S2)
+  inline void submitUsrCommand() {
+    #if !defined(CONFIG_IDF_TARGET_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S2)
       dev.cmd.update = 1;
       while (dev.cmd.update);
-#endif
-      dev.cmd.usr = 1; // Submit command
+    #endif
+    dev.cmd.usr = 1; // Submit command
+  }
 
-      data += c_longs;
-      longs -= c_longs;
+  inline void waitUsrDone() {
+    while (dev.cmd.usr);
+  }
+
+  inline void writeMosiByteLen(uint32_t bytes) {
+#if CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32
+    dev.mosi_dlen.usr_mosi_dbitlen = (bytes * 8) - 1;
+#else
+    dev.ms_dlen.ms_data_bitlen = (bytes * 8) - 1;
+#endif
+  }
+
+  void write(const void *data_in, uint32_t len) {
+    uint32_t *data = (uint32_t *)data_in;
+
+    while (len) {
+      // Up to 64 bytes each transfer, if we write more it would loop
+      auto c_len = (len > 64) ? 64 : len;
+      auto longs = (c_len + 3) >> 2;
+
+      writeMosiByteLen(c_len);
+
+      // Write the buffer
+      for (size_t i = 0; i < longs; i++) {
+        dev.data_buf[i] = data[i];
+      }
+      submitUsrCommand();
+
+      data += longs;
       len -= c_len;
 
-      // Faster to wait here (-10us)
-      while (dev.cmd.usr); // Wait till previous commands have finished
+      // Wait after variables update
+      waitUsrDone();
     }
   }
 
   void write(const uint8_t data_in) {
     write(&data_in, 1);
   }
-
-// More optimized version of write, but is minimal
-//   void write(const uint8_t data_in) {
-// #if CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32
-//     dev.mosi_dlen.usr_mosi_dbitlen = 7;
-//     dev.miso_dlen.usr_miso_dbitlen = 0;
-// #else
-//     dev.ms_dlen.ms_data_bitlen = 7;
-// #endif
-//     dev.data_buf[0] = data_in;
-// #if !defined(CONFIG_IDF_TARGET_ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S2)
-//     dev.cmd.update = 1;
-//     while (dev.cmd.update);
-// #endif
-//     dev.cmd.usr = 1; // Submit command
-//     while (dev.cmd.usr); // Wait till previous commands have finished
-//   }
 
   void command(uint8_t value)
   {
