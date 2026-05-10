@@ -15,6 +15,11 @@
 
 namespace uSpi {
   void RTC_IRAM_ATTR init(bool overdrive = false);
+
+  inline void RTC_IRAM_ATTR submitUsrCommand();
+  inline void RTC_IRAM_ATTR waitUsrDone();
+  inline void RTC_IRAM_ATTR writeMosiByteLen(uint32_t bytes);
+
   void RTC_IRAM_ATTR write(const void *data_in, uint32_t len);
   void RTC_IRAM_ATTR write(const uint8_t data_in);
   void RTC_IRAM_ATTR command(uint8_t value);
