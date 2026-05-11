@@ -99,9 +99,10 @@ lightink/
 ```
 ## More info
 
-- 📖 [History](docs/history.md)
-- 🛠️ [Hardware - Case](hardware/case/CASE.md)
-- 🛠️ [Hardware - PCB](hardware/pcb/PCB.md)
+- 📖 [History](docs/HISTORY.md)
+- 🛠️ [Hardware](hardware/HARDWARE.md)
+- ✨ [Hardware - Case](hardware/case/CASE.md)
+- ⚡ [Hardware - PCB](hardware/pcb/PCB.md)
 
 ## How to build the firmware?
 
