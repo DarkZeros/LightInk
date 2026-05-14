@@ -411,10 +411,10 @@ bool syncTime(uint32_t timeoutMs = 5000)
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-bool fetchTimezone(String& tz, std::optional<Gps::Data::Location>& loc)
+bool fetchLocationTz(int16_t& minutesWest, std::optional<Gps::Data::Location>& loc)
 {
     HTTPClient http;
-    http.begin("http://ip-api.com/json");
+    http.begin("http://ip-api.com/json/?fields=lat,lon,offset");
 
     int code = http.GET();
     if (code != 200)
@@ -423,14 +423,13 @@ bool fetchTimezone(String& tz, std::optional<Gps::Data::Location>& loc)
     JsonDocument doc;
     deserializeJson(doc, http.getString());
 
-    tz = doc["timezone"].as<String>();
-
     loc.emplace();
     loc->mLat = doc["lat"].as<float>();
     loc->mLon = doc["lon"].as<float>();
+    ESP_LOGE("Geo", "Loc %f / %f", loc->mLat, loc->mLon);
 
-    ESP_LOGE("Geo", "TZ: %s", tz.c_str());
-    ESP_LOGE("Geo", "Loc %f / %f", doc["lat"].as<float>(), doc["lon"].as<float>());
+    minutesWest = doc["offset"].as<int>() / 60;
+    ESP_LOGE("Geo", "minutesWest: %d", minutesWest);
 
     return true;
 }
@@ -449,47 +448,14 @@ bool Core::NTPSync()
         ESP_LOGE("NTP", "NTP sync failed");
         return false;
     }
+
+    // Fetch and update GPS / Location and Timezone
+    fetchLocationTz(mTime.getMinutesWest(), mGps.mData.mLocation);
+
     // Update time
     mTime.readTime();
-
-    String timezone;
-    if (fetchTimezone(timezone, mGps.mData.mLocation)) {
-        setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
-        tzset();
-    }
 
     WiFi.disconnect(true);
     ESP_LOGI("NTP", "Sync done");
     return true;
-}
-
-void Core::NTPSync2() {
-  // Select default voltage 2.9V/3.3V for WiFi
-  // We need Arduino for this (WiFi + NTP)
-  auto powerLock = Power::Lock(Power::Flag::Wifi);
-  initArduino();
-
-  if (kWifiNetworks.empty())
-    return;
-
-  // ESP_LOGE("Wifi", "%s %s", kWifiNetworks[0].mSsid.c_str(), kWifiNetworks[0].mPswd.c_str());
-  WiFi.begin(kWifiNetworks[0].mSsid.c_str(), kWifiNetworks[0].mPswd.c_str());
-  WiFi.waitForConnectResult();
-
-//   settimeofday_cb([]() { // set callback to execute after time is retrieved
-//     time_t now = time(nullptr);
-//     setTime(now); // update time to TimeLib
-//   });
-  configTime(0, 0, "pool.ntp.org");
-
-  // get network time
-  struct tm timeinfo;
-  if(!getLocalTime(&timeinfo)){
-    ESP_LOGE("NTP", "Failed to obtain time");
-    return;
-  }
-  delay(5'000);
-  WiFi.disconnect();
-
-  ESP_LOGE("NTP", "done");
 }
