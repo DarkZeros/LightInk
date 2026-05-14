@@ -34,7 +34,6 @@ public:
     void finishTasks();
 
     bool NTPSync();
-    void NTPSync2();
 
     Time mTime;
     Battery mBattery;
