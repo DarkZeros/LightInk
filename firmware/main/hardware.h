@@ -10,7 +10,7 @@
 enum class InputType { TOUCH, BUTTONS };
 
 // User config
-#define HW_TYPE HW_LIGHTINK   // HW_LIGHTINK or HW_WATCHY
+#define HW_TYPE HW_WATCHY   // HW_LIGHTINK or HW_WATCHY
 // #define HW_VERSION 1   // version number
 
 // Defaults
