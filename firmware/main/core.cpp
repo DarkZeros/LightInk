@@ -111,10 +111,6 @@ Core::Core()
     ESP_LOGE("boot","reason %d", wakeup_reason);
     switch (wakeup_reason) {
     case ESP_SLEEP_WAKEUP_TOUCHPAD: { // Touch!
-        if (kSettings.mTouch.mHaptic)
-            mTasks.emplace_back(std::async(std::launch::async, []{
-                Peripherals::vibrator(std::vector<int>{25});
-            }));
         handleTouch();
     } break;
     case ESP_SLEEP_WAKEUP_TIMER: // Internal Timer
@@ -299,6 +295,11 @@ const UI::Any& Core::findUi() {
 }
 
 void Core::handleTouch() {
+    if (kSettings.mTouch.mHaptic)
+        mTasks.emplace_back(std::async(std::launch::async, []{
+            Peripherals::vibrator(std::vector<int>{25});
+    }));
+
     // Clear WatchDog since we received a valid touch
     kSettings.mTouchWatchDog = false;
 

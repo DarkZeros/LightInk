@@ -1,5 +1,7 @@
 #include <inttypes.h>
 
+#include <magic_enum.hpp>
+
 #include "display.h"
 
 struct DeepSleepState {
