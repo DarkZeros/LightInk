@@ -57,6 +57,7 @@ Core::Core()
     // load NVS and load settings
 
     // Queue the rest of the first boot for later (GPS, LORA, NTP, Touch)
+    mGps.off();
     mTasks.emplace_back(std::async(std::launch::deferred, [&]{
         // Trigger NTP, if wifi is available, it will set time
         NTPSync();
@@ -66,7 +67,6 @@ Core::Core()
             if (!mGps.mData.mLocation)
                 mGps.on();
         } else {
-            mGps.off();
             // HACK: Set a fixed location to start with
             mGps.mData.mLocation = Gps::Data::Location{.mLat=51.438412, .mLon=-0.511787};
         }
