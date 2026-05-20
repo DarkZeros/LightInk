@@ -57,6 +57,7 @@ Core::Core()
     // load NVS and load settings
 
     // Queue the rest of the first boot for later (GPS, LORA, NTP, Touch)
+    mGps.off();
     mTasks.emplace_back(std::async(std::launch::deferred, [&]{
         // Trigger NTP, if wifi is available, it will set time
         NTPSync();
@@ -66,7 +67,6 @@ Core::Core()
             if (!mGps.mData.mLocation)
                 mGps.on();
         } else {
-            mGps.off();
             // HACK: Set a fixed location to start with
             mGps.mData.mLocation = Gps::Data::Location{.mLat=51.438412, .mLon=-0.511787};
         }
@@ -111,10 +111,6 @@ Core::Core()
     ESP_LOGE("boot","reason %d", wakeup_reason);
     switch (wakeup_reason) {
     case ESP_SLEEP_WAKEUP_TOUCHPAD: { // Touch!
-        if (kSettings.mTouch.mHaptic)
-            mTasks.emplace_back(std::async(std::launch::async, []{
-                Peripherals::vibrator(std::vector<int>{25});
-            }));
         handleTouch();
     } break;
     case ESP_SLEEP_WAKEUP_TIMER: // Internal Timer
@@ -299,6 +295,11 @@ const UI::Any& Core::findUi() {
 }
 
 void Core::handleTouch() {
+    if (kSettings.mTouch.mHaptic)
+        mTasks.emplace_back(std::async(std::launch::async, []{
+            Peripherals::vibrator(std::vector<int>{25});
+    }));
+
     // Clear WatchDog since we received a valid touch
     kSettings.mTouchWatchDog = false;
 

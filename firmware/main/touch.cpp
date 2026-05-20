@@ -109,7 +109,7 @@ Touch::Btn Touch::read() const {
   {
     auto pad = HW::Touch::Pad[mSettings.mMap[i]];
     // uint16_t padLevel = touch_ll_read_raw_data((touch_pad_t)pad);
-    // ESP_LOGE("val", "P%d; %d: %d %u", Power::current(), pad, padLevel, measure);
+    // ESP_LOGE("val", "P%d; %d: %d", Power::current(), pad, padLevel);
     bitmask |= ((mask >> pad) & 1) << i;
   }
   return (Touch::Btn)bitmask;
