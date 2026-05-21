@@ -40,8 +40,7 @@ set(srcs
 
     secrets.cpp
 
-    # WIP stuff
-    # ble.cpp
+    ble.cpp
 
     gps.cpp
     radio.cpp

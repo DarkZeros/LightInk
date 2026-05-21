@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item
+        android:width="54dp"
+        android:height="54dp"
+        android:gravity="center">
+        <vector
+            android:width="54dp"
+            android:height="54dp"
+            android:viewportWidth="54"
+            android:viewportHeight="54">
+            <path
+                android:fillColor="#FFFFFF"
+                android:pathData="M27,12L27,42M15,27L39,27"
+                android:strokeWidth="4"
+                android:strokeColor="#FFFFFF" />
+        </vector>
+    </item>
+</layer-list>

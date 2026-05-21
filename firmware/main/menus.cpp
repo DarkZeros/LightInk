@@ -162,11 +162,16 @@ UI::Any Core::generateMenus() {
         //   vTaskDelete(nullptr);
         // }, "tetris", 4096, nullptr, 5, nullptr, 1);
       }},
-      UI::Action{"BLE Test", [&]{
-        // extern void ble_main(void);
-        mTasks.emplace_back(std::async(std::launch::async, []{
-          // ble_main();
-          delay(50'000);
+      UI::Action{"BLE Sync", [&]{
+        mTasks.emplace_back(std::async(std::launch::async, [&]{
+          ble_init();
+          if (ble_sync(10000)) {
+            kSettings.mBlePaired = true;
+            ESP_LOGI("BLE", "Sync successful, marked as paired");
+          } else {
+            ESP_LOGI("BLE", "Sync timeout or failed");
+          }
+          ble_deinit();
         }));
       }},
       UI::Action{"Lora Start Rcv", [&]{

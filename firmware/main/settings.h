@@ -9,6 +9,7 @@
 
 struct Settings {
     bool mTouchWatchDog {false};
+    bool mBlePaired {false};
 
     struct Hourly {
         bool mBeep {false};

@@ -11,6 +11,7 @@
 #include "peripherals.h"
 #include "hardware.h"
 #include "settings.h"
+#include "ble.h"
 
 #include "watchface_default.h"
 
@@ -85,6 +86,18 @@ Core::Core()
 {
     // Finish pending tasks added during boot (before inputs/events)
     finishTasks();
+
+    // Auto-sync BLE on boot if previously paired
+    if (kSettings.mBlePaired && wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+        ESP_LOGI("BLE", "Auto-syncing BLE config on boot");
+        ble_init();
+        if (ble_sync(10000)) {
+            ESP_LOGI("BLE", "Auto-sync successful");
+        } else {
+            ESP_LOGI("BLE", "Auto-sync timeout");
+        }
+        ble_deinit();
+    }
 
     // Check GPS on a background task
     if (HW::kHasGps && mGps.isOn() && !mGps.mData.mLocation) {
