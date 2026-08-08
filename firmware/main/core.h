@@ -21,7 +21,6 @@
  */
 class Core {
     std::vector<std::future<void>> mTasks;
-    std::optional<uint32_t> mNextUpdate;
 
 public:
     Core();
@@ -47,4 +46,5 @@ public:
     const tmElements_t& mNow;
     std::optional<UI::Any> mUi; // optional to allow re-generation of complex type
 
+    std::optional<uint32_t> mNextUpdate;
 };

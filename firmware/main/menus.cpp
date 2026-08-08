@@ -105,10 +105,8 @@ UI::Any Core::generateMenus() {
       }},
     }},
     UI::Menu{"Watchface", {
-      // UI::Loop<int>{"Style",
-      //     []() -> int { return kSettings.mWatchface.mType; },
-      //     [](){ kSettings.mWatchface.mType = (kSettings.mWatchface.mType + 1) % 4; }
-      // },
+      UI::Loop<uint8_t>{"Style", kSettings.mWatchface.mType, 2},
+
       UI::Bool{"DEBUG MODE", kSettings.mWatchface.mDebug},
 
       UI::Bool{"Show Battery %", kSettings.mWatchface.mConfig.mBattery},

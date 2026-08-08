@@ -9,7 +9,7 @@
 static constexpr auto kMaxWatchfaceStorage = 320u;
 
 struct WatchfaceSettings {
-    uint8_t mType : 2 {0}; // Watchface type selected from the presets
+    uint8_t mType {0}; // Watchface type selected from the presets
     bool mDebug {false};
 
     // Draw cache, try to only draw once the hour
@@ -64,10 +64,10 @@ protected:
     Display& mDisplay;
 
     // Needs to implement minute uni/dec draw & return Rect coordinates
-    virtual void drawU(uint8_t d);
-    virtual void drawD(uint8_t d);
-    virtual Rect rectU();
-    virtual Rect rectD();
+    virtual void drawU(uint8_t d) {};
+    virtual void drawD(uint8_t d) {};
+    virtual Rect rectU() {return {0,0,0,0};};
+    virtual Rect rectD() {return {0,0,0,0};};
 
     // Can optionally implement Other element drawing based & return vect of rect
     virtual std::vector<Rect> render() { return {}; }

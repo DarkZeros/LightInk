@@ -32,6 +32,7 @@ set(srcs
 
     watchface.cpp
     watchface_default.cpp
+    watchface_eclipse.cpp
 
     deep_sleep.cpp
     deep_sleep_utils.cpp

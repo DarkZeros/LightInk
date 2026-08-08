@@ -14,6 +14,7 @@
 #include "settings.h"
 
 #include "watchface_default.h"
+#include "watchface_eclipse.h"
 
 RTC_DATA_ATTR Settings kSettings;
 
@@ -174,9 +175,8 @@ Core::Core()
         #define ARGS kSettings, kSettings.mWatchface, *this, mDisplay
         // Instantiate the watchface type we are using
         switch(kSettings.mWatchface.mType) {
-            default: DefaultWatchface(ARGS).draw(); break;
-            // case 0: break;
-            // case 1: break;
+            case 0: default: DefaultWatchface(ARGS).draw(); break;
+            case 1: EclipseWatchface(ARGS).draw(); break;
             // case 2: break;
             // case 3: break;
         }
