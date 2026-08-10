@@ -12,14 +12,22 @@
 
 namespace Signal {
   struct BasicOOK {
-    float mFrequency;
-    uint32_t mBitMicros;
-    std::vector<uint8_t> mPattern;
-    uint8_t mRepetitions = 1;
-    uint32_t mDelayRepetitions = 0;
+    const float mFrequency;
+    const uint32_t mBitMicros;
+    const std::vector<uint8_t> mSequence;
+    const uint8_t mRepetitions = 1;
+    const uint32_t mDelayRepetitions = 0;
     void send() const;
   };
-  using Sequence = std::variant<BasicOOK>;
+  struct FixedWidthPWM {
+    const float mFrequency;
+    const uint32_t mBitMicros;
+    const std::vector<bool> mSequence, mPattern0, mPattern1;
+    const uint8_t mRepetitions = 1;
+    const uint32_t mDelayRepetitions = 0;
+    void send() const;
+  };
+  using Sequence = std::variant<BasicOOK, FixedWidthPWM>;
   struct Group {
     std::string mName;
     std::vector<std::pair<std::string, Sequence>> mSequences;
@@ -27,6 +35,8 @@ namespace Signal {
 }
 extern const std::vector<Signal::Group> kSignals;
 
+std::vector<bool> split_bits(std::string_view bits);
+#define SPLIT_BIT(x) split_bits(#x)
 
 /* Helper class to use the Radio HW module 
  */
@@ -59,4 +69,13 @@ public:
   OOK(uint32_t bitUsDuration, float freq, int8_t minPower = -9, int8_t maxPower = 22);
   ~OOK();
   void transmit(std::vector<uint8_t> seq);
+  void transmit(std::vector<bool> seq);
+};
+
+class PWM : public OOK {
+  std::vector<bool> mPattern0, mPattern1;
+public:
+  PWM(std::vector<bool> pattern0, std::vector<bool> pattern1, float freq, int8_t minPower = -9, int8_t maxPower = 22);
+  ~PWM();
+  void transmit(std::vector<bool> seq);
 };

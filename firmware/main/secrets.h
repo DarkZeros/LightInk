@@ -5,6 +5,8 @@
 #include <string.h>
 #include <vector>
 
+#include <string_view>
+
 struct WifiConfig {
     std::string mSsid, mPswd;
 };
