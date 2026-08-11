@@ -390,6 +390,7 @@ bool connectWifi(uint32_t timeoutMs = 2000)
             return true;
         }
         WiFi.disconnect(true);
+        delay(100);
     }
     return false;
 }
@@ -413,8 +414,8 @@ bool syncTime(uint32_t timeoutMs = 5000)
 
     uint32_t start = millis();
 
-    while (!sntpSynced && millis() - start < timeoutMs)
-        delay(10);
+    while (!sntpSynced && (millis() - start < timeoutMs))
+        delay(100);
 
     esp_sntp_stop();
 
