@@ -8,9 +8,20 @@
 #include "driver/touch_sensor.h"
 #include "esp_sleep.h"
 
+#include <optional>
+
 namespace {
   RTC_DATA_ATTR bool mInitialized {false};
-  RTC_DATA_ATTR MeasureRate mCurrentRate {};
+  // Last configuration applied to the HW, to skip redundant setups
+  struct Applied {
+    bool onlyMenuLight;
+    MeasureCycles cycles;
+    MeasureRate rate;
+    int8_t sensitivity;
+    std::array<uint8_t, 4> map;
+    bool operator==(const Applied&) const = default;
+  };
+  RTC_DATA_ATTR std::optional<Applied> mApplied {};
 };
 
 Touch::Touch(TouchSettings& settings) : mSettings{settings} {
@@ -51,9 +62,10 @@ void Touch::setUp(bool onlyMenuLight) {
 #endif
 
   const auto rate = mSettings.mRate[onlyMenuLight];
-  if (rate == mCurrentRate)
+  const Applied applied{onlyMenuLight, mSettings.mCycles[onlyMenuLight], rate, mSettings.mSensitivity, mSettings.mMap};
+  if (mApplied == applied)
     return;
-  mCurrentRate = rate;
+  mApplied = applied;
 
 #if(HW_VERSION < 10)
   touch_ll_set_meas_time(mSettings.mCycles[onlyMenuLight] * 1024);
