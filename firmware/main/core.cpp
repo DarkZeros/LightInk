@@ -86,6 +86,10 @@ Core::Core()
     // Finish pending tasks added during boot (before inputs/events)
     finishTasks();
 
+    // Location may have been obtained by other means (NTP), GPS is not needed anymore
+    if (HW::kHasGps && mGps.isOn() && mGps.mData.mLocation)
+        mGps.off();
+
     // Check GPS on a background task
     if (HW::kHasGps && mGps.isOn() && !mGps.mData.mLocation) {
         mTasks.emplace_back(std::async(std::launch::async, [&]{
