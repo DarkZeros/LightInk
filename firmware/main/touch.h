@@ -7,6 +7,22 @@
 
 #include "hardware.h"
 
+#include "esp_attr.h"
+#include "hal/touch_sensor_ll.h"
+
+// Mask of the pads that triggered, safe to use from the wake stub.
+// The ESP32 reports every measured pad, even the ones not enabled
+// for wakeup (worken), so filter those out.
+FORCE_INLINE_ATTR uint32_t touchTriggerMask() {
+#if CONFIG_IDF_TARGET_ESP32
+  return TOUCH_LL_BITS_SWAP(SENS.sar_touch_ctrl2.touch_meas_en & SENS.sar_touch_enable.touch_pad_worken);
+#else
+  uint32_t mask;
+  touch_ll_read_trigger_status_mask(&mask);
+  return mask;
+#endif
+}
+
 enum MeasureRate {
     // _125ms = 1, // Extremely fast
     _250ms = 2,
