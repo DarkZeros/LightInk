@@ -1,7 +1,7 @@
 [submodule "esp-idf"]
 	path = firmware/esp-idf
-	url = https://github.com/DarkZeros/esp-idf
-	branch = v5.1
+	url = https://github.com/espressif/esp-idf.git
+	branch = release/v5.5
 [submodule "arduino"]
 	path = components/arduino
 	url = https://github.com/espressif/arduino-esp32.git
