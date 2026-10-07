@@ -27,6 +27,7 @@
 #include "esp_attr.h"
 #include "soc/rtc_periph.h"
 #include "soc/rtc.h"
+#include "hal/clk_tree_ll.h"
 
 RTC_DATA_ATTR DeepSleepState kDSState;
 
@@ -86,6 +87,11 @@ void RTC_IRAM_ATTR advanceMinutes(uint32_t minus) {
 // wake up stub function stored in RTC memory
 void RTC_IRAM_ATTR wake_stub_deepsleep(void)
 {
+  // IDF calibrates RTC_SLOW_CLK (10 cycles, noisy) just before deep sleep,
+  // overwriting ours. Restore it before anything uses it, so the time slept
+  // is accounted with our calibration once the app boots
+  clk_ll_rtc_slow_store_cal(kSettings.mTime.mCalibration);
+
   // This sets up the delay to work properly
   auto& busyWait = kDSState.busyWait[getSetDisplayMode()];
 #if (HW_VERSION < 10)

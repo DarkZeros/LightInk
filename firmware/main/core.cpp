@@ -252,19 +252,18 @@ Core::Core()
         kDSState.minutes = nextFullWake - mNow.Minute - firstMinutesSleep;
         // ESP_LOGE("", "min %d step %d wait %ld", kDSState.minutes, stepSize, kDSState.updateWait);
         kDSState.stepSize = stepSize;
-        // Only trigger the wakeupstub if there is more than 1 minute left
-        if (kDSState.minutes > 0) {
-            // IDF refuses ext0 together with touch on ESP32 (a rev 0/1 only limitation),
-            // so only set up the pin here, the wake stub enables the ext0 trigger itself
-            // while the display refreshes. RTC_PERIPH stays on due to the touch wakeup.
-            if constexpr (HW::kHasDisplayBusyWake) {
-                constexpr auto busy = (gpio_num_t)HW::Display::Busy;
-                rtc_gpio_init(busy);
-                rtc_gpio_set_direction(busy, RTC_GPIO_MODE_INPUT_ONLY);
-                rtcio_ll_ext0_set_wakeup_pin(rtc_io_number_get(busy), 0);
-            }
-            esp_set_deep_sleep_wake_stub(&wake_stub_deepsleep);
+        // IDF refuses ext0 together with touch on ESP32 (a rev 0/1 only limitation),
+        // so only set up the pin here, the wake stub enables the ext0 trigger itself
+        // while the display refreshes. RTC_PERIPH stays on due to the touch wakeup.
+        if constexpr (HW::kHasDisplayBusyWake) {
+            constexpr auto busy = (gpio_num_t)HW::Display::Busy;
+            rtc_gpio_init(busy);
+            rtc_gpio_set_direction(busy, RTC_GPIO_MODE_INPUT_ONLY);
+            rtcio_ll_ext0_set_wakeup_pin(rtc_io_number_get(busy), 0);
         }
+        // Always set the wake stub, it restores the RTC calibration on wake up.
+        // It will only update the minutes if there is more than 1 minute left
+        esp_set_deep_sleep_wake_stub(&wake_stub_deepsleep);
         auto nextMinute = secondsWait * 1'000'000 - mTime.getTimeval().tv_usec;
         esp_sleep_enable_timer_wakeup(nextMinute + (firstMinutesSleep - 1) * 60'000'000);
     } else {

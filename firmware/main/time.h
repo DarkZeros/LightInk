@@ -33,7 +33,8 @@ class Time {
     tmElements_t mElements;
 
 public:
-    explicit Time(TimeSettings& settings) : mSettings{settings} {readTime();};
+    // The calibration is reset by IDF on boot, set ours again before reading the time
+    explicit Time(TimeSettings& settings) : mSettings{settings} {calSet(); readTime();};
 
     void readTime();
     void setTime(const timeval);
