@@ -19,7 +19,7 @@ void Power::lock(Flag f) {
   // ESP_LOGE("power", "lock -> %x + %x", kLock.load(), f);
   // If the value returned is "0", this thread is responsible for locking
   if (kLock.fetch_or(f, std::memory_order_acq_rel) == 0) {
-    high();
+    apply();
   }
 }
 
@@ -27,7 +27,21 @@ void Power::unlock(Flag f) {
   // ESP_LOGE("power", "unlock -> %x + %x", kLock.load(), f);
   // If the value returned is the flag, this thread is responsible for releasing
   if (kLock.fetch_and(~f, std::memory_order_acq_rel) == f) {
-    low();
+    apply();
+  }
+}
+
+void Power::apply() {
+  // A lock and an unlock from different threads can race between updating
+  // kLock and writing the pin. Whoever writes the pin re-checks kLock after,
+  // so the last writer always leaves the voltage matching the current locks
+  bool high = kLock.load(std::memory_order_acquire) != 0;
+  while (true) {
+    set(high);
+    const bool now = kLock.load(std::memory_order_acquire) != 0;
+    if (now == high)
+      return;
+    high = now;
   }
 }
 
@@ -55,9 +69,7 @@ void Power::set(bool high) {
   if (!kSettings.mPower.mLowVoltage)
     high = true;
 
-  // Caches previous values
-  if (kPrev == high)
-    return;
+  // Not cached, apply() relies on every call writing the pin
   kPrev = high;
 
   // The value changes based on the board! Old boards have the values fliped

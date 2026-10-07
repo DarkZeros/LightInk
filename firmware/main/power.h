@@ -32,7 +32,6 @@ struct Power {
 
     // These are private since should not be used directly
 private:
-    static void RTC_SLOW_ATTR high() { set(true); }
-    static void RTC_SLOW_ATTR low() { set(false); }
+    static void RTC_SLOW_ATTR apply();
     static void RTC_SLOW_ATTR set(bool high);
 };
