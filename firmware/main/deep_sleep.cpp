@@ -14,7 +14,7 @@
 #include "sdkconfig.h"
 
 // For touch detection and Light on/off
-#include "hal/touch_sensor_ll.h"
+#include "touch.h"
 // For WDT feeding
 #include "hal/wdt_hal.h"
 
@@ -127,8 +127,7 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
   // Light on press button?
   // 8 for timer // 256 for touch
   if (wakeupCause == 256) {
-    uint32_t mask;
-    touch_ll_read_trigger_status_mask(&mask);
+    const uint32_t mask = touchTriggerMask();
 
     // If it is the current set light pad button
     if ((mask >> kDSState.lightPad) & 1){

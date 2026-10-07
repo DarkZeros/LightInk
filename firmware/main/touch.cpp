@@ -105,8 +105,7 @@ void Touch::disable() const {
 }
 
 Touch::Btn Touch::read() const {
-  uint32_t mask;
-  touch_ll_read_trigger_status_mask(&mask);
+  uint32_t mask = touchTriggerMask();
   // ESP_LOGE("mask", "%lu", mask);
 
   // Strange, but For S3 if the mask is unset, it is the last-pad
