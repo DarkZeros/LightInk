@@ -439,6 +439,8 @@ bool Core::NTPSync()
 {
     auto powerLock = Power::Lock(Power::Flag::Wifi);
     initArduino();
+    // Turn the radio off on every exit path, before powerLock drops to low voltage
+    struct WifiOff { ~WifiOff() { WiFi.disconnect(true); WiFi.mode(WIFI_OFF); } } wifiOff;
 
     if (!connectWifi()) {
         ESP_LOGE("NTP", "WiFi failed");
@@ -456,7 +458,6 @@ bool Core::NTPSync()
     // Update time
     mTime.readTime();
 
-    WiFi.disconnect(true);
     ESP_LOGI("NTP", "Sync done");
     return true;
 }
