@@ -26,6 +26,7 @@
 
 #include "esp_attr.h"
 #include "soc/rtc_periph.h"
+#include "soc/rtc.h"
 
 RTC_DATA_ATTR DeepSleepState kDSState;
 
@@ -65,6 +66,15 @@ void RTC_IRAM_ATTR microSleep(uint32_t micros) {
   feed_wdt();
 }
 
+// The wake stub sleeps with the wakeup sources of the last deep sleep, toggle ext0 manually
+FORCE_INLINE_ATTR void setBusyWakeup(bool enable) {
+  if (enable) {
+    SET_PERI_REG_MASK(RTC_CNTL_WAKEUP_STATE_REG, RTC_EXT0_TRIG_EN << RTC_CNTL_WAKEUP_ENA_S);
+  } else {
+    CLEAR_PERI_REG_MASK(RTC_CNTL_WAKEUP_STATE_REG, RTC_EXT0_TRIG_EN << RTC_CNTL_WAKEUP_ENA_S);
+  }
+}
+
 void RTC_IRAM_ATTR advanceMinutes(uint32_t minus) {
   // Guess the amount to sleep until next one and advance counters
   kDSState.currentMinutes += kDSState.stepSize;
@@ -87,6 +97,10 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
   // If we were waiting for a display finish, we need to complete it first
   if (kDSState.displayBusy) {
     kDSState.displayBusy = false;
+    if constexpr (HW::kHasDisplayBusyWake) {
+      // BUSY stays low once the display is idle, it would wake us again
+      setBusyWakeup(false);
+    }
 
     // Go back to low power mode, since to update the RAM low power is enough
     Power::unlock(Power::Flag::Display);
@@ -202,6 +216,7 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
   if constexpr (HW::kHasDisplayBusyWake) {
     // Just need to go back to sleep the correct amount
     // The display hibernation will happen without affecting the timer
+    setBusyWakeup(true);
     advanceMinutes(0);
   } else {
     // Set wakeup timer when we guess display will finish refreshing, to put display to hibernation

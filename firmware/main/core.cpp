@@ -2,6 +2,7 @@
 #include <fmt/format.h>
 
 #include "driver/rtc_io.h"
+#include "hal/rtc_io_ll.h"
 
 #include "core.h"
 #include "deep_sleep.h"
@@ -253,8 +254,15 @@ Core::Core()
         kDSState.stepSize = stepSize;
         // Only trigger the wakeupstub if there is more than 1 minute left
         if (kDSState.minutes > 0) {
-            if constexpr (HW::kHasDisplayBusyWake)
-                esp_sleep_enable_ext0_wakeup((gpio_num_t)HW::Display::Busy, 0);
+            // IDF refuses ext0 together with touch on ESP32 (a rev 0/1 only limitation),
+            // so only set up the pin here, the wake stub enables the ext0 trigger itself
+            // while the display refreshes. RTC_PERIPH stays on due to the touch wakeup.
+            if constexpr (HW::kHasDisplayBusyWake) {
+                constexpr auto busy = (gpio_num_t)HW::Display::Busy;
+                rtc_gpio_init(busy);
+                rtc_gpio_set_direction(busy, RTC_GPIO_MODE_INPUT_ONLY);
+                rtcio_ll_ext0_set_wakeup_pin(rtc_io_number_get(busy), 0);
+            }
             esp_set_deep_sleep_wake_stub(&wake_stub_deepsleep);
         }
         auto nextMinute = secondsWait * 1'000'000 - mTime.getTimeval().tv_usec;
