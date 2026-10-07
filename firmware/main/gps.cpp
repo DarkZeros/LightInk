@@ -22,10 +22,10 @@ void Gps::set(bool high) const {
   }
   if (HW::Gps::Vcc == (uint8_t)-1)
     return;
-  rtc_gpio_hold_dis((gpio_num_t)HW::Gps::Vcc);
+  Power::hold((gpio_num_t)HW::Gps::Vcc, false);
   pinMode(HW::Gps::Vcc, OUTPUT);
   digitalWrite(HW::Gps::Vcc, !high);
-  rtc_gpio_hold_en((gpio_num_t)HW::Gps::Vcc);
+  Power::hold((gpio_num_t)HW::Gps::Vcc, true);
 }
 
 bool Gps::isOn() const {

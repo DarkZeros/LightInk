@@ -242,7 +242,7 @@ Core::Core()
     if constexpr (HW::kHasLora) {
         esp_sleep_enable_ext1_wakeup(1ULL << HW::Lora::Dio1, ESP_EXT1_WAKEUP_ANY_HIGH);
         // Hold some pins to some values to avoid leaking current
-        rtc_gpio_hold_en((gpio_num_t)HW::Lora::Cs);
+        Power::hold((gpio_num_t)HW::Lora::Cs, true);
     }
 
     // We can only run wakeupstub when on watchface mode

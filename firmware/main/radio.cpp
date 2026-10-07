@@ -2,6 +2,7 @@
 #include "driver/rtc_io.h"
 
 #include "radio.h"
+#include "power.h"
 
 namespace {
   RTC_DATA_ATTR std::optional<SPISettings> kSpi;
@@ -78,7 +79,7 @@ Radio::Radio() {
     kHal->pinMode(kModule->getGpio(), kHal->GpioModeInput);
     kModule->init();
   }
-  rtc_gpio_hold_dis((gpio_num_t)HW::Lora::Cs);
+  Power::hold((gpio_num_t)HW::Lora::Cs, false);
 }
 
 void Radio::startReceive()

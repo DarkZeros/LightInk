@@ -94,13 +94,13 @@ Display::Display() : Adafruit_GFX(WIDTH, HEIGHT) {
   
   // Reset HW / Exit Deep Sleep
   if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
-    rtc_gpio_hold_dis((gpio_num_t)HW::Display::Res);
+    Power::hold((gpio_num_t)HW::Display::Res, false);
   gpio_set_level((gpio_num_t)HW::Display::Res, LOW);
   delay(1);
   gpio_set_level((gpio_num_t)HW::Display::Res, HIGH); // THE HAT BOARD NEEDS output high
   //pinMode(HW::Display::Res, INPUT_PULLUP);
   if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
-    rtc_gpio_hold_en((gpio_num_t)HW::Display::Res);
+    Power::hold((gpio_num_t)HW::Display::Res, true);
 
   // Display requires ISR service for busy pin
   gpio_intr_disable((gpio_num_t)HW::Display::Busy);
