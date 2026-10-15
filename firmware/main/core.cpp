@@ -134,6 +134,7 @@ Core::Core()
         // Check watchdog -> reset to watchFace
         if (kSettings.mTouchWatchDog) {
             kSettings.mUi.mDepth = -1; // Reset to watchFace
+            kSettings.mUi.mPopup.reset();
         }
         kSettings.mTouchWatchDog = true;
         break;
@@ -193,6 +194,8 @@ Core::Core()
     } else {
         mDisplay.setRefreshMode(kSettings.mDisplay.mMenuLut);
         kSettings.mWatchface.mLastDraw.mValid = false;
+        auto& popup = kSettings.mUi.mPopup;
+        mDisplay.mHoldRefresh = popup.has_value();
         std::visit([&](auto& e){
             if constexpr (has_render<decltype(e), Display&>::value) {
                 e.render(mDisplay);
@@ -203,6 +206,11 @@ Core::Core()
                 mDisplay.println("PRESS BACK");
             }
         }, findUi());
+        if (popup) {
+            mDisplay.mHoldRefresh = false;
+            UI::renderPopup(mDisplay, popup->data());
+            mDisplay.writeAllAndRefresh();
+        }
     }
 
     // Finish display & pending tasks, then setup touch
@@ -342,6 +350,12 @@ void Core::handleTouch() {
         } else if (btn == Touch::MENU) {
             ui.mDepth = 0;
         }
+        return;
+    }
+
+    // A popup swallows the press, any button dismisses it
+    if (ui.mPopup) {
+        ui.mPopup.reset();
         return;
     }
 

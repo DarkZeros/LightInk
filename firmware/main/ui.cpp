@@ -30,6 +30,35 @@ void renderHeader(Display& mDisplay, const std::string& name, size_t size) {
     mDisplay.setCursor(mDisplay.getCursorX(), mDisplay.getCursorY() + 5);
 }
 
+void renderPopup(Display& mDisplay, const char* msg) {
+    // Split in lines ('\n'), each one centered inside a framed box
+    std::vector<std::string_view> lines;
+    for (std::string_view rest{msg}; !rest.empty();) {
+        auto end = rest.find('\n');
+        lines.push_back(rest.substr(0, end));
+        rest = end == rest.npos ? std::string_view{} : rest.substr(end + 1);
+    }
+
+    mDisplay.setTextSize(2);
+    mDisplay.setTextWrap(false);
+    constexpr int kLineH = 16, kPad = 8, kMargin = 10;
+    const int boxW = mDisplay.WIDTH - 2 * kMargin;
+    const int boxH = lines.size() * kLineH + 2 * kPad;
+    const int boxY = (mDisplay.HEIGHT - boxH) / 2;
+
+    mDisplay.fillRect(kMargin, boxY, boxW, boxH, 0);
+    mDisplay.drawRect(kMargin, boxY, boxW, boxH, 1);
+    mDisplay.drawRect(kMargin + 1, boxY + 1, boxW - 2, boxH - 2, 1);
+
+    mDisplay.setTextColor(1, 0);
+    for (auto i = 0; i < lines.size(); i++) {
+        std::string line{lines[i]};
+        auto w = mDisplay.getTextRect(line.c_str()).w;
+        mDisplay.setCursor((mDisplay.WIDTH - w) / 2, boxY + kPad + i * kLineH);
+        mDisplay.print(line.c_str());
+    }
+}
+
 const Any* Sub::sub(uint8_t index) const {
     if (index >= items.size())
         return nullptr;

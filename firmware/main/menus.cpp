@@ -89,7 +89,16 @@ UI::Any Core::generateMenus() {
         UI::NumberRange<int8_t>{"Last Hour", kSettings.mHourly.mLast, {0, 24} },
       }},
       UI::Menu{"Alarms", buildAlarms(*this)},
-      UI::Action{"NTP", [&]{ NTPSync(); }},
+      UI::Action{"NTP", [&]{
+        if (!NTPSync()) {
+          kSettings.mUi.popup("NTP\nFailed");
+          return;
+        }
+        char msg[32];
+        std::sprintf(msg, "NTP OK\n%02d:%02d:%02d\nUTC%+d", mNow.Hour, mNow.Minute, mNow.Second,
+                     kSettings.mTime.mMinutesWest / 60);
+        kSettings.mUi.popup(msg);
+      }},
       UI::Action{(HW::kHasGps ? (mGps.isOn() ? "GPS Off" : "GPS resync") : "No GPS"), [&]{
         if constexpr (!HW::kHasGps) {
           return;

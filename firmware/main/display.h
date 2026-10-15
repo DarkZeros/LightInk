@@ -91,6 +91,10 @@ public:
   void writeAll(bool backBuffer = false);
   void writeAllAndRefresh();
 
+  // While set, writeAllAndRefresh() is a no-op. Lets an overlay (popup) be drawn
+  // on top of a render() so the panel is refreshed only once.
+  bool mHoldRefresh {false};
+
   // Aditional helper draw
   void drawMoon(float p, uint16_t x, uint16_t y, uint16_t radius, uint16_t on, uint16_t off);
   void fillCalcEllipse(int x, int y, uint8_t width, uint8_t height, uint16_t on);

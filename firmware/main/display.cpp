@@ -479,6 +479,8 @@ void Display::writeRect(Rect rect)
 
 void Display::writeAllAndRefresh()
 {
+  if (mHoldRefresh)
+    return;
   writeAll();
   refresh();
  }
