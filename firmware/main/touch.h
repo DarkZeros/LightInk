@@ -73,10 +73,14 @@ public:
         LIGHT = BACK,
     };
     std::vector<uint16_t> readAll() const;
-    Btn read() const;
+    Btn read() const; // The press that woke us
     void clear() const;
     Btn readAndClear() const;
+    Btn poll() const; // Presses since the last clear, for use while awake. Also clears
 
     void enable() const;
     void disable() const;
+
+private:
+    Btn toBtn(uint32_t mask) const;
 };

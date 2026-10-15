@@ -1,8 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <functional>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -15,6 +18,20 @@
 struct UiSettings {
     std::array<uint8_t, 4> mState{}; // Up to 4 levels deep (increase if needed)
     int8_t mDepth {-1};
+
+    // Message box drawn on top of the menus or the watchface by Core::draw(), until a
+    // button removes it (or the watchdog, when it leaves the menus). While it is up on
+    // the watchface the wake stub is off: every update is a full boot that draws it.
+    // Lives in RTC memory (kSettings), so it must be a fixed size buffer, not a
+    // std::string. Lines are split by '\n', 14 characters fit in each.
+    std::optional<std::array<char, 64>> mPopup;
+
+    void popup(std::string_view msg) {
+        auto& buf = mPopup.emplace();
+        auto len = std::min(msg.size(), buf.size() - 1);
+        std::copy_n(msg.data(), len, buf.data());
+        buf[len] = '\0';
+    }
 };
 
 // Allows overloading lambdas for std::visit
@@ -52,6 +69,7 @@ class Time;
 namespace UI {
 
 void renderHeader(Display& mDisplay, const std::string& name, size_t size = 2);
+void renderPopup(Display& mDisplay, const char* msg);
 
 struct Name {
     std::string baseName;

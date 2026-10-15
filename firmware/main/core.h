@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <future>
+#include <string_view>
 #include <vector>
 
 #include "spi.h"
@@ -14,6 +16,7 @@
 #include "ui.h"
 #include "secrets.h"
 #include "time.h"
+#include "peripherals.h"
 
 /* This is the primary class of the project.
  * It has the entry point from deepsleep as well as all
@@ -27,6 +30,12 @@ public:
 
     void handleTouch();
     void draw();
+    // Popup for blocking work, drawn right away. The final message goes through
+    // kSettings.mUi.popup() instead: the draw at the end of the wake shows it
+    void progress(std::string_view msg);
+    // Shows msg while job runs in the background, BACK sets its Cancel. Returns with
+    // the popup removed once the job has ended
+    void runCancellable(std::string_view msg, std::function<void(const Cancel&)> job);
     const UI::Any& findUi();
     UI::Any generateMenus();
     void regenerateMenus() { mUi.emplace(generateMenus()); };

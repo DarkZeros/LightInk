@@ -131,9 +131,11 @@ Core::Core()
         handleTouch();
     } break;
     case ESP_SLEEP_WAKEUP_TIMER: // Internal Timer
-        // Check watchdog -> reset to watchFace
-        if (kSettings.mTouchWatchDog) {
+        // Check watchdog -> reset to watchFace. The menu's popup goes with it, one on
+        // the watchface stays until a button dismisses it
+        if (kSettings.mTouchWatchDog && kSettings.mUi.mDepth >= 0) {
             kSettings.mUi.mDepth = -1; // Reset to watchFace
+            kSettings.mUi.mPopup.reset();
         }
         kSettings.mTouchWatchDog = true;
         break;
@@ -223,12 +225,16 @@ Core::Core()
 
     // We can only run wakeupstub when on watchface mode
     if (kSettings.mUi.mDepth < 0) {
+        // The stub would draw the minutes over a popup: full boots until it's dismissed
+        const bool stub = !kSettings.mUi.mPopup;
         kDSState.currentMinutes = mNow.Minute + firstMinutesSleep;
         kDSState.minutes = nextFullWake - mNow.Minute - firstMinutesSleep;
         // ESP_LOGE("", "min %d step %d wait %ld", kDSState.minutes, stepSize, kDSState.updateWait);
         kDSState.stepSize = stepSize;
         // Only trigger the wakeupstub if there is more than 1 minute left
-        if (kDSState.minutes > 0) {
+        if (!stub) {
+            esp_set_deep_sleep_wake_stub(NULL);
+        } else if (kDSState.minutes > 0) {
             // BUSY wakes us through ext1, it works with RTC_PERIPH off unlike ext0. Only
             // set up the pin here, the wake stub arms ext1 itself while the display
             // refreshes. RTC_PERIPH is off, so the hold is what keeps the pad configured.
@@ -275,11 +281,23 @@ void Core::draw() {
     mDisplay.setTextColor(0xFF);
 
     // Show watch face or menu ?
-    if (kSettings.mUi.mDepth < 0) {
+    const bool watchface = kSettings.mUi.mDepth < 0;
+    auto& last = kSettings.mWatchface.mLastDraw;
+    // A popup needs a full frame, and so does the frame after it to remove it
+    if (kSettings.mUi.mPopup)
+        last.mValid = false;
+    const bool full = !watchface || !last.mValid;
+    // A full frame draws everything again, but the buffer may hold an earlier frame of
+    // this wake (progress()): the watchface digits have no background and would pile up
+    if (full)
+        mDisplay.fillScreen(0);
+
+    if (watchface) {
         mDisplay.setRefreshMode(kSettings.mDisplay.mWatchLut);
         #define ARGS kSettings, kSettings.mWatchface, *this, mDisplay
-        // Instantiate the watchface type we are using. It writes and refreshes by
-        // itself, its partial updates depend on what it left in the display RAM
+        // Instantiate the watchface type we are using. A full frame is only drawn into
+        // the buffer, a partial update it writes and refreshes by itself: it depends on
+        // what it left in the display RAM
         switch(kSettings.mWatchface.mType) {
             case 0: default: DefaultWatchface(ARGS).draw(); break;
             case 1: EclipseWatchface(ARGS).draw(); break;
@@ -290,8 +308,6 @@ void Core::draw() {
         Light::off(); // Always turn off light exiting the Menus
     } else {
         mDisplay.setRefreshMode(kSettings.mDisplay.mMenuLut);
-        kSettings.mWatchface.mLastDraw.mValid = false;
-        mDisplay.fillScreen(0);
         mDisplay.setCursor(0, 0);
         std::visit([&](auto& e){
             if constexpr (has_render<decltype(e), Display&>::value) {
@@ -303,10 +319,39 @@ void Core::draw() {
                 mDisplay.println("PRESS BACK");
             }
         }, findUi());
-        mDisplay.writeAllAndRefresh();
     }
 
+    if (full) {
+        if (auto& popup = kSettings.mUi.mPopup)
+            UI::renderPopup(mDisplay, popup->data());
+        mDisplay.writeAllAndRefresh();
+        // The watchface's next partial needs this frame in the front buffer too: after a
+        // partial it holds the frame before. A full refresh doesn't swap (T80)
+        if (watchface && !mDisplay.lastRefreshFull())
+            mDisplay.writeAll();
+    }
+    // The watchface redraws everything after the menus or a popup
+    if (!watchface || kSettings.mUi.mPopup)
+        last.mValid = false;
+
     mDisplay.hibernate();
+}
+
+void Core::progress(std::string_view msg) {
+    kSettings.mUi.popup(msg);
+    draw();
+}
+
+void Core::runCancellable(std::string_view msg, std::function<void(const Cancel&)> job) {
+    Cancel cancel{false};
+    auto task = std::async(std::launch::async, [&]{ job(cancel); });
+    progress(msg);
+    while (task.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
+        if (mTouch.poll() & Touch::BACK)
+            cancel = true;
+    }
+    task.get();
+    kSettings.mUi.mPopup.reset();
 }
 
 const UI::Any& Core::findUi() {
@@ -347,6 +392,12 @@ void Core::handleTouch() {
 
     auto& ui = kSettings.mUi;
     ESP_LOGE("ui", "depth%d st%d", ui.mDepth, ui.mState[ui.mDepth]);
+
+    // A popup swallows the press, any button dismisses it (on the watchface as well)
+    if (ui.mPopup) {
+        ui.mPopup.reset();
+        return;
+    }
 
     // Button press on the watchface
     if (ui.mDepth < 0) {
@@ -478,6 +529,9 @@ bool fetchLocationTz(int16_t& minutesWest, std::optional<Gps::Data::Location>& l
 
 bool Core::NTPSync()
 {
+    // Refresh before the radio is on, it is the expensive part
+    progress("WiFi\nConnecting...");
+
     auto powerLock = Power::Lock(Power::Flag::Wifi);
     initArduino();
     // Turn the radio off on every exit path, before powerLock drops to low voltage
@@ -485,11 +539,15 @@ bool Core::NTPSync()
 
     if (!connectWifi()) {
         ESP_LOGE("NTP", "WiFi failed");
+        kSettings.mUi.popup("WiFi\nFailed");
         return false;
     }
 
+    progress("WiFi connected\nNTP syncing...");
+
     if (!syncTime()) {
         ESP_LOGE("NTP", "NTP sync failed");
+        kSettings.mUi.popup("NTP\nFailed");
         return false;
     }
 
@@ -500,5 +558,9 @@ bool Core::NTPSync()
     mTime.readTime();
 
     ESP_LOGI("NTP", "Sync done");
+    char msg[32];
+    std::snprintf(msg, sizeof(msg), "NTP synced\n%02d:%02d:%02d\nUTC%+d", mNow.Hour, mNow.Minute, mNow.Second,
+                  kSettings.mTime.mMinutesWest / 60);
+    kSettings.mUi.popup(msg);
     return true;
 }

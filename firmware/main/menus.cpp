@@ -152,13 +152,7 @@ UI::Any Core::generateMenus() {
         }));
       }},
       UI::Action{"Tetris Sound", [&]{
-        mTasks.emplace_back(std::async(std::launch::async, []{
-          Peripherals::tetris();
-        }));
-        // xTaskCreatePinnedToCore([](void*){
-        //   Peripherals::tetris();
-        //   vTaskDelete(nullptr);
-        // }, "tetris", 4096, nullptr, 5, nullptr, 1);
+        runCancellable("Playing Tetris\nBACK to cancel", Peripherals::tetris);
       }},
       UI::Action{"BLE Test", [&]{
         // extern void ble_main(void);
@@ -191,27 +185,28 @@ UI::Any Core::generateMenus() {
             }
           }
           mDisplay.writeAllAndRefresh();
-          if (mTouch.readAndClear() != Touch::Btn::NONE)
+          if (mTouch.poll() != Touch::Btn::NONE)
             break;
         }
         mDisplay.setRefreshMode(oldMode);
       }},
       UI::Action{"Parallel All", [&]{
-        mTasks.emplace_back(std::async(std::launch::async, []{
-          Peripherals::tetris();
-        }));
-        mTasks.emplace_back(std::async(std::launch::async, []{
-          for (auto i=0; i<10; i++) {
-            delay(1300);
-            Peripherals::vibrator(std::vector<int>{70});
-          }
-        }));
-        mTasks.emplace_back(std::async(std::launch::async, []{
-          for (auto i=0; i<30; i++) {
-            delay(1000);
-            Light::toggle();
-          }
-        }));
+        runCancellable("Parallel test\nBACK to cancel", [](const Cancel& cancel){
+          auto vibrate = std::async(std::launch::async, [&]{
+            for (auto i=0; i<10 && !cancel; i++) {
+              delay(1300);
+              Peripherals::vibrator(std::vector<int>{70});
+            }
+          });
+          auto light = std::async(std::launch::async, [&]{
+            for (auto i=0; i<30 && !cancel; i++) {
+              delay(1000);
+              Light::toggle();
+            }
+            Light::off();
+          });
+          Peripherals::tetris(cancel);
+        });
       }},
     }},
     UI::Menu{"Test2", {

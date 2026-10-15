@@ -41,6 +41,10 @@ void Watchface::updateCache() {
 }
 
 void Watchface::draw() {
+  // The faces set their fonts but assume size 1, and an earlier frame of this wake
+  // (a progress() popup) may have left another size: custom fonts scale with it too
+  mDisplay.setTextSize(1);
+
   // Check & update the cache if needed
   updateCache();
 
@@ -100,35 +104,35 @@ void Watchface::draw() {
     mDisplay.alignRect(c);
   }
 
-  // Update display / refresh
+  // Full frame: only into the buffer, Core::draw() writes and refreshes it (with a
+  // popup on top) and leaves it in both RAM buffers
   if (!last.mValid){
     copyMinutes2Buffer();
-    mDisplay.writeAllAndRefresh();
-    // After a partial the front buffer holds the frame before: write it again for the
-    // next partial. A full refresh doesn't swap, the front buffer has it already (T80)
-    if (!mDisplay.lastRefreshFull())
-      mDisplay.writeAll();
+    last.mValid = true;
+    last.mMinuteD = mNow.Minute / 10;
     last.mMinuteU[0] = last.mMinuteU[1] = mNow.Minute % 10; // Both buffers are set
-  } else {
-    // Pass 1: Copy all to display
-    for (const auto& c : composables)      
+    return;
+  }
+
+  // Partial update, written and refreshed here
+  // Pass 1: Copy all to display
+  for (const auto& c : composables)      
+    mDisplay.writeAlignedRect(c);
+  copyMinutesD();
+  copyMinutesU();
+
+  // Manual refresh + swap buffers
+  mDisplay.refresh();
+
+  // Pass 3, copy again the updated parts to the front framebuffer. Not after a full
+  // refresh: it doesn't swap, the front buffer holds the frame already (T80)
+  if (!mDisplay.lastRefreshFull()) {
+    for (const auto& c : composables)
       mDisplay.writeAlignedRect(c);
     copyMinutesD();
-    copyMinutesU();
-
-    // Manual refresh + swap buffers
-    mDisplay.refresh();
-
-    // Pass 3, copy again the updated parts to the front framebuffer. Not after a full
-    // refresh: it doesn't swap, the front buffer holds the frame already (T80)
-    if (!mDisplay.lastRefreshFull()) {
-      for (const auto& c : composables)
-        mDisplay.writeAlignedRect(c);
-      copyMinutesD();
-    }
-    // Do not copy the minutes to frontbuffer, since we will likely
-    // change it next update, saving a few 300 * 8 * 0.05us = >106us = 200us;
   }
+  // Do not copy the minutes to frontbuffer, since we will likely
+  // change it next update, saving a few 300 * 8 * 0.05us = >106us = 200us;
 
   // Store the values for next round
   last.mValid = true;

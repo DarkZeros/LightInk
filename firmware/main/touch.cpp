@@ -114,7 +114,10 @@ Touch::Btn Touch::read() const {
       mask = 1 << HW::Touch::Pad.back();
     }
   }
+  return toBtn(mask);
+}
 
+Touch::Btn Touch::toBtn(uint32_t mask) const {
   uint8_t bitmask {};
   for (auto i = 0; i < HW::Touch::Pad.size(); i++)
   {
@@ -142,6 +145,12 @@ void Touch::clear() const {
 
 Touch::Btn Touch::readAndClear() const {
   auto btn = read();
+  clear();
+  return btn;
+}
+
+Touch::Btn Touch::poll() const {
+  auto btn = toBtn(touchTriggerMask());
   clear();
   return btn;
 }

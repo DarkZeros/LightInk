@@ -282,7 +282,14 @@ int melody[] = {
 
 };
 
-void Peripherals::tetris() {
+// delay() that ends early once cancelled
+static void delayOrCancel(int ms, const Cancel& cancel) {
+  constexpr int kSlice = 50;
+  for (; ms > 0 && !cancel; ms -= kSlice)
+    delay(std::min(ms, kSlice));
+}
+
+void Peripherals::tetris(const Cancel& cancel) {
   Speaker speaker;
   int notes=sizeof(melody)/sizeof(melody[0])/2; 
 
@@ -290,7 +297,7 @@ void Peripherals::tetris() {
   int wholenote = (60000 * 4) / tempo;
 
   int divider = 0, noteDuration = 0;
-  for (int thisNote = 0; thisNote < notes * 2; thisNote = thisNote + 2) {
+  for (int thisNote = 0; thisNote < notes * 2 && !cancel; thisNote = thisNote + 2) {
 
     // calculates the duration of each note
     divider = melody[thisNote + 1];
@@ -305,9 +312,9 @@ void Peripherals::tetris() {
 
     // we only play the note for 90% of the duration, leaving 10% as a pause
     speaker.set(melody[thisNote]);
-    delay(noteDuration * 0.9);
+    delayOrCancel(noteDuration * 0.9, cancel);
 
     speaker.set(0);
-    delay(noteDuration * 0.1);
+    delayOrCancel(noteDuration * 0.1, cancel);
   }
 }
