@@ -379,14 +379,14 @@ bool connectWifi(uint32_t timeoutMs = 2000)
 {
     WiFi.mode(WIFI_STA);
     for (auto& net : kWifiNetworks) {
-        ESP_LOGI("WiFi", "Connecting to %s", net.mSsid.c_str());
-        WiFi.begin(net.mSsid.c_str(), net.mPswd.c_str());
+        ESP_LOGI("WiFi", "Connecting to %s", net.mSsid);
+        WiFi.begin(net.mSsid, net.mPswd);
         uint32_t start = millis();
         while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
             delay(100);
         }
         if (WiFi.status() == WL_CONNECTED) {
-            ESP_LOGE("WiFi", "Connected: %s", net.mSsid.c_str());
+            ESP_LOGE("WiFi", "Connected: %s", net.mSsid);
             return true;
         }
         WiFi.disconnect(true);
