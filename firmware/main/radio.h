@@ -1,6 +1,8 @@
 #pragma once
 
+#include <initializer_list>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 #include <variant>
@@ -11,10 +13,35 @@
 #include "hardware.h"
 
 namespace Signal {
+  // Up to 64 bits packed MSB first, built at compile time with the _bits literal
+  struct Bits {
+    uint64_t mValue = 0;
+    uint8_t mSize = 0;
+    constexpr bool operator[](uint8_t i) const { return (mValue >> (mSize - 1 - i)) & 1; }
+  };
+  namespace literals {
+    // Not constexpr: calling it from the consteval literal is a compile error
+    void invalid_bits_literal();
+    // 0001'1110_bits -> Bits{0b00011110, 8}. Leading zeros are kept, ' separators skipped
+    template <char... C>
+    consteval Bits operator""_bits() {
+      Bits b;
+      for (char c : {C...}) {
+        if (c == '\'')
+          continue;
+        if ((c != '0' && c != '1') || b.mSize == 64)
+          invalid_bits_literal();
+        b.mValue = (b.mValue << 1) | (c == '1');
+        b.mSize++;
+      }
+      return b;
+    }
+  }
+
   struct BasicOOK {
     const float mFrequency;
     const uint32_t mBitMicros;
-    const std::vector<uint8_t> mSequence;
+    const std::span<const uint8_t> mSequence;
     const uint8_t mRepetitions = 1;
     const uint32_t mDelayRepetitions = 0;
     void send() const;
@@ -22,21 +49,19 @@ namespace Signal {
   struct FixedWidthPWM {
     const float mFrequency;
     const uint32_t mBitMicros;
-    const std::vector<bool> mSequence, mPattern0, mPattern1;
+    const Bits mSequence, mPattern0, mPattern1;
     const uint8_t mRepetitions = 1;
     const uint32_t mDelayRepetitions = 0;
     void send() const;
   };
   using Sequence = std::variant<BasicOOK, FixedWidthPWM>;
   struct Group {
-    std::string mName;
-    std::vector<std::pair<std::string, Sequence>> mSequences;
+    const char* mName;
+    std::span<const Entry> mSequences;
   };
 }
-extern const std::vector<Signal::Group> kSignals;
-
-std::vector<bool> split_bits(std::string_view bits);
-#define SPLIT_BIT(x) split_bits(#x)
+// constinit in secrets.cpp: lives in flash, no construction at boot
+extern const std::span<const Signal::Group> kSignals;
 
 /* Helper class to use the Radio HW module 
  */
@@ -65,17 +90,13 @@ class OOK {
   uint32_t mBitUsDuration;
   int8_t mMinPower, mMaxPower;
   int16_t setOutputPowerFast(int8_t power);
+  // Calls forEachBit(emit) and keys the carrier for every bit it emits
+  template <typename F> void transmitBits(F&& forEachBit);
 public:
   OOK(uint32_t bitUsDuration, float freq, int8_t minPower = -9, int8_t maxPower = 22);
   ~OOK();
-  void transmit(std::vector<uint8_t> seq);
-  void transmit(std::vector<bool> seq);
-};
-
-class PWM : public OOK {
-  std::vector<bool> mPattern0, mPattern1;
-public:
-  PWM(std::vector<bool> pattern0, std::vector<bool> pattern1, float freq, int8_t minPower = -9, int8_t maxPower = 22);
-  ~PWM();
-  void transmit(std::vector<bool> seq);
+  void transmit(std::span<const uint8_t> seq);
+  void transmit(Signal::Bits seq);
+  // Each bit of seq is sent as pattern1 (1) or pattern0 (0)
+  void transmit(Signal::Bits seq, Signal::Bits pattern0, Signal::Bits pattern1);
 };

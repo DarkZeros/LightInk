@@ -11,15 +11,6 @@ namespace {
   RTC_DATA_ATTR std::optional<SX1262> kRadio;
 }
 
-std::vector<bool> split_bits(std::string_view bits)
-{
-    std::vector<bool> result;
-    result.reserve(bits.size());
-    for (char c : bits)
-        result.push_back(c - '0');
-    return result;
-}
-
 OOK::OOK(uint32_t bitUsDuration, float freq, int8_t minPower, int8_t maxPower)
 : mBitUsDuration(bitUsDuration)
 , mMinPower(minPower)
@@ -49,16 +40,8 @@ void Signal::BasicOOK::send() const {
 void Signal::FixedWidthPWM::send() const {
   // auto ook = OOK(mBitMicros, mFrequency, -9, 22); // Custom power transmission
   auto ook = OOK(mBitMicros, mFrequency);
-  // Construct the sequence to send
-  std::vector<bool> seq;
-  seq.reserve(std::max(mPattern0.size(), mPattern1.size()));
-  for(auto bit : mSequence) {
-    auto& pat = bit ? mPattern1 : mPattern0;
-    for (auto b : pat)
-      seq.emplace_back(b);
-  }
   for(auto i=0; i<mRepetitions; i++) {
-    ook.transmit(seq);
+    ook.transmit(mSequence, mPattern0, mPattern1);
     delayMicroseconds(mDelayRepetitions);
   }
 }
@@ -70,39 +53,43 @@ int16_t OOK::setOutputPowerFast(int8_t power) {
   return kModule->SPIwriteStream(RADIOLIB_SX126X_CMD_SET_TX_PARAMS, data, 2);
 }
 
-void OOK::transmit(std::vector<uint8_t> seq){
+template <typename F>
+void OOK::transmitBits(F&& forEachBit) {
   if (!kRadio)
     return;
   RadioLibTime_t start = kHal->micros();
   std::optional<bool> lastPower;
-  for (size_t byteIdx = 0; byteIdx < seq.size(); ++byteIdx) {
-    uint8_t byte = seq[byteIdx];
-    for (int bitIdx = 7; bitIdx >= 0; --bitIdx) {
-      bool bit = (byte >> bitIdx) & 0x01;
-      if (bit != lastPower) {
-        setOutputPowerFast(bit ? mMaxPower : mMinPower);
-        lastPower = bit;
-      }
-      kModule->waitForMicroseconds(start, mBitUsDuration);
-      start += mBitUsDuration;
-    }
-  }
-  kRadio->setOutputPower(mMinPower);
-}
-void OOK::transmit(std::vector<bool> seq){
-  if (!kRadio)
-    return;
-  RadioLibTime_t start = kHal->micros();
-  std::optional<bool> lastPower;
-  for (auto bit : seq) {
+  forEachBit([&](bool bit) {
     if (bit != lastPower) {
       setOutputPowerFast(bit ? mMaxPower : mMinPower);
       lastPower = bit;
     }
     kModule->waitForMicroseconds(start, mBitUsDuration);
     start += mBitUsDuration;
-  }
+  });
   kRadio->setOutputPower(mMinPower);
+}
+void OOK::transmit(std::span<const uint8_t> seq) {
+  transmitBits([&](auto emit) {
+    for (uint8_t byte : seq)
+      for (int bitIdx = 7; bitIdx >= 0; --bitIdx)
+        emit((byte >> bitIdx) & 0x01);
+  });
+}
+void OOK::transmit(Signal::Bits seq) {
+  transmitBits([&](auto emit) {
+    for (uint8_t i = 0; i < seq.mSize; i++)
+      emit(seq[i]);
+  });
+}
+void OOK::transmit(Signal::Bits seq, Signal::Bits pattern0, Signal::Bits pattern1) {
+  transmitBits([&](auto emit) {
+    for (uint8_t i = 0; i < seq.mSize; i++) {
+      auto pat = seq[i] ? pattern1 : pattern0;
+      for (uint8_t j = 0; j < pat.mSize; j++)
+        emit(pat[j]);
+    }
+  });
 }
 
 
