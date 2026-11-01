@@ -38,6 +38,7 @@ set(srcs
     deep_sleep_utils.cpp
 
     uspi.cpp
+    trace.cpp
 
     secrets.cpp
 

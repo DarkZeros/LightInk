@@ -1,6 +1,7 @@
 #include "power.h"
 #include "hardware.h"
 #include "settings.h"
+#include "trace.h"
 
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
@@ -89,6 +90,7 @@ void Power::lock(Flag f) {
   if (kLock.fetch_or(f, std::memory_order_acq_rel) == 0) {
     high();
   }
+  Trace::power(f, true, kLock.load(), kPrev);
 }
 
 void Power::unlock(Flag f) {
@@ -98,6 +100,7 @@ void Power::unlock(Flag f) {
   if (kLock.fetch_and(~f, std::memory_order_acq_rel) == f) {
     low();
   }
+  Trace::power(f, false, kLock.load(), kPrev);
 }
 
 bool Power::current() {

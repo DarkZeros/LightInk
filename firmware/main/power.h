@@ -18,6 +18,7 @@ struct Power {
         Wifi = 0x10,
         BT = 0x20,
         Lora = 0x40,
+        Trace = 0x80, // Debug trace: rail high while awake (see trace.cpp)
     };
 
     struct Lock {

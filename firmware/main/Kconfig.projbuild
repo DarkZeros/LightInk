@@ -1,0 +1,27 @@
+menu "LightInk debug trace"
+
+config LIGHTINK_TRACE
+    bool "Stream display SPI traffic over UART0 (debug only)"
+    default n
+    help
+        Every byte sent to the display (app and deep-sleep wake stub) is mirrored
+        as binary frames on UART0, together with wake/sleep/button events.
+        Decode and view with tools/lightink_trace.py.
+        Debug only: slows every wake and invalidates any power measurement. Keeps the
+        power rail high while the app is awake (UART0 is unreliable on the low rail).
+
+config LIGHTINK_TRACE_SCRIPT
+    string "Scripted touch sequence"
+    depends on LIGHTINK_TRACE
+    default ""
+    help
+        Buttons replayed one per wake after first boot, instead of real touches.
+        M=menu U=up D=down B=back/light .=wake without touch (timer redraw).
+        Any other character is ignored, e.g. "M D D M . B B".
+
+config LIGHTINK_TRACE_STEP_MS
+    int "Delay between scripted steps (ms)"
+    depends on LIGHTINK_TRACE
+    default 1000
+
+endmenu

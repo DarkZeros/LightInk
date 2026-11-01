@@ -23,6 +23,7 @@
 #include "light.h"
 #include "uspi.h"
 #include "deep_sleep.h"
+#include "trace.h"
 
 #include "esp_attr.h"
 #include "soc/rtc_periph.h"
@@ -93,6 +94,7 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
 #endif
 
   const auto wakeupCause = esp_wake_stub_get_wakeup_cause();
+  Trace::stubWake(wakeupCause);
   
   // If we were waiting for a display finish, we need to complete it first
   if (kDSState.displayBusy) {

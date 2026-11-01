@@ -12,13 +12,14 @@
 #include "peripherals.h"
 #include "hardware.h"
 #include "settings.h"
+#include "trace.h"
 
 #include "watchface_default.h"
 #include "watchface_eclipse.h"
 
 RTC_DATA_ATTR Settings kSettings;
 
-auto wakeup_reason = esp_sleep_get_wakeup_cause();
+auto wakeup_reason = Trace::wakeCause(esp_sleep_get_wakeup_cause());
 
 Core::Core()
 : mTime{kSettings.mTime}
@@ -278,6 +279,7 @@ Core::Core()
 
     mTouch.clear(); // Clear the mask just before entering the sleep
 
+    Trace::sleep();
     esp_deep_sleep_disable_rom_logging();
     esp_deep_sleep_start();
     ESP_LOGE("deepSleep", "never reach!");
@@ -316,7 +318,7 @@ void Core::handleTouch() {
     kSettings.mTouchWatchDog = false;
 
     // Convert to what button was it
-    Touch::Btn btn = mTouch.readAndClear();
+    Touch::Btn btn = Trace::touch(mTouch.readAndClear());
     ESP_LOGE("parsed", "%d, %s", btn, std::string(magic_enum::enum_name(btn)).c_str());
 
     auto& ui = kSettings.mUi;
@@ -378,6 +380,7 @@ void Core::setNextUpdate(uint32_t seconds)
 bool connectWifi(uint32_t timeoutMs = 2000)
 {
     WiFi.mode(WIFI_STA);
+    Trace::wifiStarted();
     for (auto& net : kWifiNetworks) {
         ESP_LOGI("WiFi", "Connecting to %s", net.mSsid);
         WiFi.begin(net.mSsid, net.mPswd);
@@ -401,6 +404,7 @@ static bool sntpSynced = false;
 void timeSyncCallback(struct timeval *tv)
 {
     sntpSynced = true;
+    Trace::ntpSynced();
 }
 
 bool syncTime(uint32_t timeoutMs = 5000)

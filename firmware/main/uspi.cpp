@@ -1,4 +1,5 @@
 #include "uspi.h"
+#include "trace.h"
 
 namespace uSpi {
   static constexpr auto clockDiv = 266241; // =20MHz
@@ -79,6 +80,7 @@ namespace uSpi {
   }
 
   void write(const void *data_in, uint32_t len) {
+    Trace::spi(data_in, len);
     uint32_t *data = (uint32_t *)data_in;
 
     while (len) {

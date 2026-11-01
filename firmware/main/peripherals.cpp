@@ -1,6 +1,7 @@
 #include "peripherals.h"
 #include "hardware.h"
 #include "power.h"
+#include "trace.h"
 
 #include "driver/gpio.h"
 #include "Arduino.h"
@@ -16,6 +17,7 @@ void Peripherals::vibrator(const std::vector<int>& pattern) {
 
   //Configure GPIO with the given settings
   gpio_config(&kConf);
+  Trace::vibrator(pattern);
 
   for(auto i = 0; i < pattern.size(); i++) {
     gpio_set_level((gpio_num_t)HW::kVibratorPin, i % 2 ? 0 : 1);
@@ -133,6 +135,7 @@ struct Speaker {
 
 void Peripherals::speaker(const std::vector<std::pair<int, int>>& pattern) {
   Speaker speaker;
+  Trace::speaker(pattern);
 
   for(auto& [note, duration] : pattern) {
     speaker.set(note);
