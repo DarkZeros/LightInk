@@ -19,15 +19,31 @@
 // we can remember them and avoid expensive SPI calls
 static RTC_DATA_ATTR struct DisplayState {
   bool initialized : 1 {false};
-  bool fullMode : 1 {false};
   bool firstRefreshDone : 1 {false};
   bool darkBorder : 1 {false};
   bool inverted : 1 {false};
   bool postInvert : 1 {false};
+  bool oddPartials : 1 {false}; // Odd number of partial refreshes since the last full / SWRESET
+  bool backStale : 1 {false}; // Last refresh was full: front = glass, back stale (T80)
   DisplayMode mode {DisplayMode::FULL};
 } kState;
 
 int RTC_IRAM_ATTR getSetDisplayMode() { return kState.mode; };
+
+// The RAM banks (docs/display_findings.md T76-T80):
+// - A partial (mode 2) refresh drives back -> front and swaps: afterwards the back
+//   buffer holds the glass, the front one the frame before.
+// - A full (mode 1) refresh shows the front buffer iff an even number of partials ran
+//   since the last full refresh or SWRESET (sleep and HW reset keep the count), and
+//   doesn't swap: afterwards the front buffer holds the glass, the back one is stale.
+// So in FULL mode the front buffer is enough, except after an odd number of partials
+// (leaving a partial-mode menu), where RAM writes go to both banks. Before the first
+// partial after a full refresh, setRefreshMode() swaps once without display (0x98).
+int RTC_IRAM_ATTR getRamWrites() { return kState.mode == FULL && kState.oddPartials ? 2 : 1; }
+void RTC_IRAM_ATTR countRefresh(bool full) {
+  kState.oddPartials = !full && !kState.oddPartials;
+  kState.backStale = full;
+}
 
 namespace {
   const SPISettings kSpiSettings{Display::kOverdriveSPI ? 26'666'666 : 20'000'000, MSBFIRST, SPI_MODE0};
@@ -117,13 +133,16 @@ void Display::init() {
   _transferCommand(0x12); // SW reset all values to factory defaults
   _endTransfer();
   waitWhileBusy();
+  kState.oddPartials = false; // SWRESET restarts the count (T77)
+  kState.backStale = false;
 
   _startTransfer();
   _transferCommand(0x01); // Driver output control
   _transfer(0xC7); // 0x0C7 is already the default
   _transfer(0b0);
   _transfer(0b000); // Gate scanning sequence, default 000
-  // TODO: Can implement mirror Y feature with this bit 001
+  // TODO: Mirror Y with this bit 001 (works, T46); X- entry mode mirrors X, bits
+  // included (T52), so the controller could do the 180 degree rotation itself
 
   if constexpr (kReduceBoosterTime) {
     // SSD1675B controller datasheet
@@ -221,9 +240,30 @@ void Display::setRefreshMode(DisplayMode mode)
   if (!kState.firstRefreshDone)
     return;
 
+  // A partial needs the glass in the back buffer, a full refresh leaves it in the
+  // front one (T80): swap once without driving the panel. Without the display bit
+  // only mode 2 + LUT load swaps (T85 D8 vs T84 C8), and it doesn't need the analog:
+  // 0x98 = clock + LUT load + mode 2 takes 1 ms of BUSY, 0xD8 92 ms (T86). It loads
+  // the OTP LUT, so the custom LUT is loaded after it, by _setRefreshMode()
+  if (mode != FULL && kState.backStale) {
+    auto powerLock = Power::Lock(Power::Flag::Display);
+    _startTransfer();
+    _transferCommand(0x22);
+    _transfer(0x98);
+    _transferCommand(0x20);
+    _endTransfer();
+    countRefresh(false);
+    waitWhileBusy();
+  }
+
   _startTransfer();
   _setRefreshMode(mode);
   _endTransfer();
+}
+
+bool Display::lastRefreshFull() const
+{
+  return kState.backStale;
 }
 DisplayMode Display::getRefreshMode() const
 {
@@ -256,22 +296,20 @@ void Display::_setRefreshMode(const DisplayMode& mode)
     updateCommand |= kLoadTemp;
   }
 
-  // If we are chaging from FULL to FAST/CUSTOM need to set
-  // the display into 2 buffer mode again by triggering an update
-  if ((mode == DisplayMode::FULL) ^ kState.fullMode && kState.firstRefreshDone) {
-    _transferCommand(0x22);
-    _transfer(updateCommand);
-    _transferCommand(0x20);
-    _endTransfer();
-    waitWhileBusy();
-    _startTransfer();
-  }
-
+  // No extra update when switching between FULL and a partial mode: a partial works
+  // right after a full one (docs/display_findings.md T03), and an update without the
+  // display bit still swaps the buffers (T06), leaving the back buffer one frame behind the glass
   _transferCommand(0x22);
   _transfer(updateCommand | kDisplay);
-  kState.fullMode = mode == DisplayMode::FULL;
 }
 
+// A partial refresh swaps the front and back buffers (docs/display_findings.md
+// T04-T09, T49): after it, the back buffer (0x26) holds what is on the glass and the
+// front buffer (0x24) the frame before. It drives each pixel by back -> front, so
+// callers must write every pixel that differs from the glass into the front buffer
+// before the next refresh: writeAll() does, Watchface::draw() and the wake stub
+// re-write their changed areas after a partial refresh. A full refresh doesn't swap
+// (T80): the front buffer then already holds the frame, see lastRefreshFull().
 void Display::refresh()
 {
   if (!kState.firstRefreshDone) {
@@ -283,6 +321,10 @@ void Display::refresh()
     _startTransfer();
     _transferCommand(0x20);
     _endTransfer();
+    // Until the first refresh the controller keeps the FULL update from init()
+    countRefresh(!kState.firstRefreshDone || kState.mode == FULL);
+    if (!kState.firstRefreshDone)
+      kState.backStale = false; // Both banks hold the frame (writeAll(true) above)
 
     waitWhileBusy();
   }
@@ -400,16 +442,24 @@ void Display::alignRect(Rect& rect) const
   // h = y + h < HEIGHT ? h : HEIGHT - y; // limit
 }
 
+// See getRamWrites(): 2 only in FULL mode after an odd number of partial refreshes
+int Display::_ramWrites() const
+{
+  return getRamWrites();
+}
+
 void Display::writeAlignedRect(const Rect& rect)
 {
   _startTransfer();
-  _setRamArea(rect);
-  _transferCommand(0x24);
-  auto xst = rect.x >> 3;
-  for (auto i = 0; i < rect.h; i++)
-  {
-    auto yoffset = (rect.y + i) * WB_BITMAP;
-    _transfer(buffer + xst + yoffset, rect.w >> 3);
+  for (int ram = 0; ram < _ramWrites(); ram++) {
+    _setRamArea(rect);
+    _transferCommand(ram ? 0x26 : 0x24);
+    auto xst = rect.x >> 3;
+    for (auto i = 0; i < rect.h; i++)
+    {
+      auto yoffset = (rect.y + i) * WB_BITMAP;
+      _transfer(buffer + xst + yoffset, rect.w >> 3);
+    }
   }
   _endTransfer();
 }
@@ -417,10 +467,12 @@ void Display::writeAlignedRect(const Rect& rect)
 void Display::writeAlignedRectPacked(const uint8_t* ptr, const Rect& rect)
 {
   _startTransfer();
-  _setRamArea(rect);
-  // ESP_LOGE("area","%p, %d %d %d %d, size %d", ptr, x, y, w, h, ((uint16_t)h) * w / 8);
-  _transferCommand(0x24);
-  _transfer(ptr, ((uint16_t)rect.h * rect.w) >> 3);
+  for (int ram = 0; ram < _ramWrites(); ram++) {
+    _setRamArea(rect);
+    // ESP_LOGE("area","%p, %d %d %d %d, size %d", ptr, x, y, w, h, ((uint16_t)h) * w / 8);
+    _transferCommand(ram ? 0x26 : 0x24);
+    _transfer(ptr, ((uint16_t)rect.h * rect.w) >> 3);
+  }
   _endTransfer();
 }
 
@@ -439,9 +491,11 @@ void Display::writeAllAndRefresh()
 void Display::writeAll(bool backbuffer)
 {
   _startTransfer();
-  _setRamArea({0, 0, WIDTH, HEIGHT});
-  _transferCommand(backbuffer ? 0x26 : 0x24);
-  _transfer(buffer, sizeof(buffer));
+  for (int ram = 0; ram < (backbuffer ? 1 : _ramWrites()); ram++) {
+    _setRamArea({0, 0, WIDTH, HEIGHT});
+    _transferCommand(backbuffer || ram ? 0x26 : 0x24);
+    _transfer(buffer, sizeof(buffer));
+  }
   _endTransfer();
 }
 
@@ -449,9 +503,9 @@ void Display::hibernate()
 {
   _startTransfer();
   _transferCommand(0x10); // change deep sleep mode
-  _transfer(0b01);  // mode 1 (RAM reading allowed)
-  // _transfer(0b11); // mode 2 (no RAM reading allowed) // Doesn't work... why?
-  // _transfer(0b10); // mode 2 as well?
+  _transfer(0b01);  // mode 1: RAM and every register survive the HW reset on wake (T14-T26)
+  // Mode 2 (0b11) loses the controller state within a minute (T50): it would need a
+  // SWRESET-level re-init and both RAM banks rewritten on every wake
   _endTransfer();
 }
 

@@ -205,13 +205,19 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
     last.mMinuteU[1] = u;
   }
   if (d != last.mMinuteD) {
-    // Write minute D + repeat it in the display hibernate
+    // Write minute D + repeat it in the display hibernate: the refresh swaps the RAM
+    // buffers, so the front buffer must get it again or the next partial would revert it (T04-T09)
     const auto& dec = kSettings.mWatchface.mCache.mDecimal;
     uSpi::writeArea(dec.data + dec.coord.size()*d, dec.coord.x, dec.coord.y, dec.coord.w, dec.coord.h);
     last.mMinuteD = d;
     kDSState.redrawDec = true;
   }
   uSpi::refresh();
+  if (getSetDisplayMode() == FULL) {
+    // A full refresh doesn't swap (T80): the front buffer already holds both digits
+    last.mMinuteU[0] = last.mMinuteU[1];
+    kDSState.redrawDec = false;
+  }
   turnOffGpio();
   kDSState.displayBusy = true;
 

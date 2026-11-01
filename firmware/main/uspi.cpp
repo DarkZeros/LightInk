@@ -132,9 +132,13 @@ namespace uSpi {
   };
 
   void writeArea(const uint8_t* ptr, uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
-    setRamArea(x, y, w, h);
-    command(0x24);
-    write(ptr, ((uint16_t)h) * w / 8);
+    // Both banks only when a full refresh would show the back one (T76/T77)
+    const int rams = getRamWrites();
+    for (int ram = 0; ram < rams; ram++) {
+      setRamArea(x, y, w, h);
+      command(ram ? 0x26 : 0x24);
+      write(ptr, ((uint16_t)h) * w / 8);
+    }
   }
 
   void refresh() {
@@ -143,6 +147,7 @@ namespace uSpi {
     // write(0b11010100 | 0b00001000);
     // Update
     command(0x20);
+    countRefresh(getSetDisplayMode() == FULL);
   }
 
   void hibernate() {

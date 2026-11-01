@@ -33,6 +33,8 @@ struct DisplaySettings {
 };
 
 extern int getSetDisplayMode();
+extern int getRamWrites(); // RAM banks each write must go to (1 or 2), also in the wake stub
+extern void countRefresh(bool full); // After every 0x20 that refreshes, also in the wake stub
 
 struct Rect {
   uint8_t x, y, w, h;
@@ -78,6 +80,8 @@ public:
   void setRefreshMode(DisplayMode mode);
   DisplayMode getRefreshMode() const;
   void refresh();
+  // The last refresh was full: the front buffer holds the glass, no re-write needed
+  bool lastRefreshFull() const;
   void hibernate();
   void waitWhileBusy();
   void writeRect(Rect rect);
@@ -93,6 +97,8 @@ public:
   void drawMoonFast(float p, int x, int y, uint8_t r, uint16_t on, uint16_t off);
 
 private:
+  int _ramWrites() const; // RAM banks each write goes to, see getRamWrites()
+
   // Called internally in middle of transfer
   void _setRamArea(const Rect& rect);
   void _setRefreshMode(const DisplayMode& mode);

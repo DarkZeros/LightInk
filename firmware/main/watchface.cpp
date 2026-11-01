@@ -106,7 +106,10 @@ void Watchface::draw() {
   if (!last.mValid){
     copyMinutes2Buffer();
     mDisplay.writeAllAndRefresh();
-    mDisplay.writeAll(); // We need to write the other buffer for partial updates
+    // After a partial the front buffer holds the frame before: write it again for the
+    // next partial. A full refresh doesn't swap, the front buffer has it already (T80)
+    if (!mDisplay.lastRefreshFull())
+      mDisplay.writeAll();
     last.mMinuteU[0] = last.mMinuteU[1] = mNow.Minute % 10; // Both buffers are set
   } else {
     // Pass 1: Copy all to display
@@ -118,10 +121,13 @@ void Watchface::draw() {
     // Manual refresh + swap buffers
     mDisplay.refresh();
 
-    // Pass 3, copy again the updated parts to the front framebuffer
-    for (const auto& c : composables)      
-      mDisplay.writeAlignedRect(c);
-    copyMinutesD();
+    // Pass 3, copy again the updated parts to the front framebuffer. Not after a full
+    // refresh: it doesn't swap, the front buffer holds the frame already (T80)
+    if (!mDisplay.lastRefreshFull()) {
+      for (const auto& c : composables)
+        mDisplay.writeAlignedRect(c);
+      copyMinutesD();
+    }
     // Do not copy the minutes to frontbuffer, since we will likely
     // change it next update, saving a few 300 * 8 * 0.05us = >106us = 200us;
   }
@@ -131,4 +137,6 @@ void Watchface::draw() {
   last.mMinuteD = mNow.Minute / 10;
   last.mMinuteU[0] = mNow.Minute % 10; // Update the front
   std::swap(last.mMinuteU[0], last.mMinuteU[1]);
+  if (mDisplay.lastRefreshFull())
+    last.mMinuteU[0] = last.mMinuteU[1]; // No swap: the front buffer shows this minute
 }
