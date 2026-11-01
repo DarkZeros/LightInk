@@ -1,5 +1,6 @@
 
 #include "core.h"
+#include "display_test.h"
 #include "esp_pm.h"
 
 Core& getInstance() {
@@ -17,6 +18,7 @@ void app_main(void) {
     };
     esp_pm_configure(&pm_config);
 
+    DisplayTest::run(); // Debug only, never returns when enabled
     getInstance();
 }
 }

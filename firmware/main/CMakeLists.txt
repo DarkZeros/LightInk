@@ -39,6 +39,7 @@ set(srcs
 
     uspi.cpp
     trace.cpp
+    display_test.cpp
 
     secrets.cpp
 

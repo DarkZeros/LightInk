@@ -25,3 +25,21 @@ config LIGHTINK_TRACE_STEP_MS
     default 1000
 
 endmenu
+
+menu "LightInk display tests"
+
+config LIGHTINK_DISPLAY_TEST
+    bool "Replace the watch app with SSD1681 experiments (debug only)"
+    default n
+    help
+        Boots into a menu of display controller experiments instead of the
+        watch: UP/DOWN select, MENU runs, BACK returns to the menu. Each test
+        leaves a picture that answers one question, see docs/display_tests.md.
+        Works with LIGHTINK_TRACE to record every command sent.
+
+config LIGHTINK_DISPLAY_TEST_START
+    int "Test to run at first boot (0 = show the menu)"
+    depends on LIGHTINK_DISPLAY_TEST
+    default 0
+
+endmenu
