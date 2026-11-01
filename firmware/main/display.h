@@ -11,6 +11,8 @@
 
 #include <Adafruit_GFX.h>
 
+#include "esp_attr.h"
+
 #include "hardware.h"
 
 #include "lut.h"
@@ -33,6 +35,7 @@ struct DisplaySettings {
 };
 
 extern int getSetDisplayMode();
+extern uint8_t getHwRotation();
 extern int getRamWrites(); // RAM banks each write must go to (1 or 2), also in the wake stub
 extern void countRefresh(bool full); // After every 0x20 that refreshes, also in the wake stub
 
@@ -58,7 +61,8 @@ public:
 
   void init();
 
-  void rotate(Rect& rect) const;
+  void setRotation(uint8_t r) override;
+  void toBuffer(Rect& rect) const; // View rect -> buffer rect (transposed for 90/270)
   void alignRect(Rect& rect) const;
   Rect getTextRect(const char * str, int16_t xc = -1, int16_t yc = -1);
 
@@ -112,3 +116,21 @@ private:
   void _transferCommand(uint8_t c);
   void _endTransfer();
 };
+
+// Rotation in hardware (docs/display_findings.md T27, T52): the software always draws
+// at 0 degrees, into a buffer that is transposed for 90/270 (a byte then holds 8
+// vertical pixels), and the entry mode mirrors X for 90/180 and Y for 180/270 while
+// the controller writes. Buffer rect (x along the bytes) -> RAM window, from its start
+// corner. Shared by the driver and the wake stub.
+struct RamWindow { uint8_t xs, xe, ys, ye; };
+FORCE_INLINE_ATTR RamWindow ramWindow(uint8_t rotation, uint8_t x, uint8_t y, uint8_t w, uint8_t h)
+{
+  const bool mirrorX = rotation == 1 || rotation == 2, mirrorY = rotation >= 2;
+  constexpr int W = Display::WIDTH, H = Display::HEIGHT;
+  return {
+    uint8_t(mirrorX ? (W - 1 - x) >> 3 : x >> 3),
+    uint8_t(mirrorX ? (W - x - w) >> 3 : (x + w - 1) >> 3),
+    uint8_t(mirrorY ? H - 1 - y : y),
+    uint8_t(mirrorY ? H - y - h : y + h - 1),
+  };
+}

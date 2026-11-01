@@ -23,12 +23,14 @@ static RTC_DATA_ATTR struct DisplayState {
   bool darkBorder : 1 {false};
   bool inverted : 1 {false};
   bool postInvert : 1 {false};
+  uint8_t rotation : 2 {0}; // Done by the controller, see setRotation()
   bool oddPartials : 1 {false}; // Odd number of partial refreshes since the last full / SWRESET
   bool backStale : 1 {false}; // Last refresh was full: front = glass, back stale (T80)
   DisplayMode mode {DisplayMode::FULL};
 } kState;
 
 int RTC_IRAM_ATTR getSetDisplayMode() { return kState.mode; };
+uint8_t RTC_IRAM_ATTR getHwRotation() { return kState.rotation; };
 
 // The RAM banks (docs/display_findings.md T76-T80):
 // - A partial (mode 2) refresh drives back -> front and swaps: afterwards the back
@@ -141,8 +143,7 @@ void Display::init() {
   _transfer(0xC7); // 0x0C7 is already the default
   _transfer(0b0);
   _transfer(0b000); // Gate scanning sequence, default 000
-  // TODO: Mirror Y with this bit 001 (works, T46); X- entry mode mirrors X, bits
-  // included (T52), so the controller could do the 180 degree rotation itself
+  // Rotations are done with the entry mode instead, see setRotation()
 
   if constexpr (kReduceBoosterTime) {
     // SSD1675B controller datasheet
@@ -215,19 +216,38 @@ void Display::_setCustomLut(const DisplayMode& mode) {
 
 void Display::_setRamArea(const Rect& rect){
   auto& [x, y, w, h] = rect;
+  const auto [xs, xe, ys, ye] = ramWindow(kState.rotation, x, y, w, h);
   _transferCommand(0x44);  // X start & end positions (Byte)
-  _transfer(x >> 3);
-  _transfer((x + w - 1) >> 3);
+  _transfer(xs);
+  _transfer(xe);
   _transferCommand(0x45); // Y start & end positions (Line)
-  _transfer(y);
+  _transfer(ys);
   _transfer(0);
-  _transfer(y + h - 1);
+  _transfer(ye);
   //_transfer(0); // No need to write this, default is 0
   _transferCommand(0x4e); // X start counter
-  _transfer(x >> 3);
+  _transfer(xs);
   _transferCommand(0x4f); // Y start counter
-  _transfer(y);
+  _transfer(ys);
   //_transfer(0); // No need to write this, default is 0
+}
+
+// Every rotation in hardware, the software always draws at 0 degrees (see ramWindow).
+// GFX keeps the rotation too, so the drawing code reads it from DRAM: the RTC copy in
+// kState (slow memory) is for the wake stub and to skip the SPI write
+void Display::setRotation(uint8_t r)
+{
+  r &= 3;
+  Adafruit_GFX::setRotation(r);
+  if (kState.rotation == r)
+    return;
+  kState.rotation = r;
+  // Entry mode: bit 0 X+ unless mirrored, bit 1 Y+ unless mirrored, X first
+  static constexpr uint8_t kEntry[4] = {0b11, 0b10, 0b00, 0b01};
+  _startTransfer();
+  _transferCommand(0x11); // Kept across the HW reset on every wake (T26)
+  _transfer(kEntry[r]);
+  _endTransfer();
 }
 
 void Display::setRefreshMode(DisplayMode mode)
@@ -400,31 +420,18 @@ void Display::setInverted(bool inverted) {
   _endTransfer();
 }
 
-void Display::rotate(Rect& rect) const
+void Display::toBuffer(Rect& rect) const
 {
   auto& [x, y, w, h] = rect;
-  switch (getRotation())
-  {
-    case 1:
-      std::swap(x, y);
-      std::swap(w, h);
-      x = WIDTH - x - w;
-      break;
-    case 2:
-      x = WIDTH - x - w;
-      y = HEIGHT - y - h;
-      break;
-    case 3:
-      std::swap(x, y);
-      std::swap(w, h);
-      y = HEIGHT - y - h;
-      break;
+  if (getRotation() & 1) {
+    std::swap(x, y);
+    std::swap(w, h);
   }
 }
 
 void Display::alignRect(Rect& rect) const
 {
-  rotate(rect);
+  toBuffer(rect);
   auto& [x, y, w, h] = rect;
 
   // Align x down, and w up
@@ -519,22 +526,9 @@ Rect Display::getTextRect(const char * str, int16_t xc, int16_t yc) {
 
 void Display::drawPixel(int16_t x, int16_t y, uint16_t color)
 {
-  // check rotation, move pixel around if necessary
-  switch (getRotation())
-  {
-    case 1:
-      std::swap(x, y);
-      x = WIDTH - x - 1;
-      break;
-    case 2:
-      x = WIDTH - x - 1;
-      y = HEIGHT - y - 1;
-      break;
-    case 3:
-      std::swap(x, y);
-      y = HEIGHT - y - 1;
-      break;
-  }
+  // 90/270: the buffer holds the transposed picture, the controller mirrors the rest
+  if (getRotation() & 1)
+    std::swap(x, y);
   auto& ptr = buffer[(x >> 3) + y * WB_BITMAP];
   auto mask = 1 << (7 - (x & 7));
   if (color)
@@ -578,26 +572,10 @@ void Display::drawFastVLine(int16_t x, int16_t y, int16_t h,
     h = height() - y;
   }
 
-  if (getRotation() == 0) {
+  if (getRotation() & 1) // Transposed buffer
+    drawFastRawHLine(y, x, h, color);
+  else
     drawFastRawVLine(x, y, h, color);
-  } else if (getRotation() == 1) {
-    int16_t t = x;
-    x = WIDTH - 1 - y;
-    y = t;
-    x -= h - 1;
-    drawFastRawHLine(x, y, h, color);
-  } else if (getRotation() == 2) {
-    x = WIDTH - 1 - x;
-    y = HEIGHT - 1 - y;
-
-    y -= h - 1;
-    drawFastRawVLine(x, y, h, color);
-  } else if (getRotation() == 3) {
-    int16_t t = x;
-    x = y;
-    y = HEIGHT - 1 - t;
-    drawFastRawHLine(x, y, h, color);
-  }
 }
 
 /**************************************************************************/
@@ -633,26 +611,10 @@ void Display::drawFastHLine(int16_t x, int16_t y, int16_t w,
     w = width() - x;
   }
 
-  if (getRotation() == 0) {
+  if (getRotation() & 1) // Transposed buffer
+    drawFastRawVLine(y, x, w, color);
+  else
     drawFastRawHLine(x, y, w, color);
-  } else if (getRotation() == 1) {
-    int16_t t = x;
-    x = WIDTH - 1 - y;
-    y = t;
-    drawFastRawVLine(x, y, w, color);
-  } else if (getRotation() == 2) {
-    x = WIDTH - 1 - x;
-    y = HEIGHT - 1 - y;
-
-    x -= w - 1;
-    drawFastRawHLine(x, y, w, color);
-  } else if (getRotation() == 3) {
-    int16_t t = x;
-    x = y;
-    y = HEIGHT - 1 - t;
-    y -= w - 1;
-    drawFastRawVLine(x, y, w, color);
-  }
 }
 
 /**************************************************************************/

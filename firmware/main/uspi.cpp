@@ -116,18 +116,20 @@ namespace uSpi {
   }
 
   void setRamArea(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
+    // Rotation in hardware: the window from its start corner (see ramWindow)
+    const auto [xs, xe, ys, ye] = ramWindow(getHwRotation(), x, y, w, h);
     command(0x44);  // X start & end positions (Byte)
-    write(x >> 3);
-    write((x + w - 1) >> 3);
+    write(xs);
+    write(xe);
     command(0x45); // Y start & end positions (Line)
-    write(y);
+    write(ys);
     write(0);
-    write((y + h - 1));
+    write(ye);
     //write(0); // No need to write this, default is 0
     command(0x4e); // X start counter
-    write(x >> 3);
+    write(xs);
     command(0x4f); // Y start counter
-    write(y);
+    write(ys);
     //write(0); // No need to write this, default is 0
   };
 

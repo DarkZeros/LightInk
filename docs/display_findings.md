@@ -258,10 +258,17 @@ T57: same, but the text is not very visible (grey).
   Replaying the test captures reproduces every modelled result.
   - Which bank a full refresh shows can't be known from the trace, so the viewer
     shows front and flags full refreshes where front ≠ back.
+- **Done:** every rotation in hardware, checked on the watch for 0/90/180/270°.
+  - Adafruit-GFX always draws at rotation 0.
+  - For 90°/270° the buffer holds the transposed picture (a byte = 8 vertical
+    pixels). The controller can't transpose bits, so that part stays in software
+    as an x/y swap.
+  - The entry mode does the rest: X mirrored for 90°/180°, Y for 180°/270°
+    (`0x11` = `03`, `02`, `00`, `01`). The RAM window starts at its corner; one
+    shared function (`ramWindow`) serves the app driver and the wake stub.
 - **Decided:** keep the custom LUTs' sustain phase (`N_1`). Refreshing old pixels a
   little on every update avoids the greys and shadows that build up otherwise.
 - **Open:**
-  - Hardware mirroring instead of software rotation.
   - Deep sleep mode 2: not usable without a full re-init per wake.
 
 ## Fourth run (T58–T63): full refresh after partial ones
