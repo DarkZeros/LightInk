@@ -165,7 +165,7 @@ Core::Core()
 
     // Common display preparations, post UI Events processing
     auto& disp = kSettings.mDisplay;
-    mDisplay.setRotation(disp.mRotation);
+    mDisplay.setFlip(disp.mFlip);
     mDisplay.setDarkBorder(disp.mDarkBorder ^ disp.mInvert);
     mDisplay.setInverted(!disp.mInvert);
     mDisplay.setTextColor(0xFF);

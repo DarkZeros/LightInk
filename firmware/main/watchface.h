@@ -15,9 +15,8 @@ struct WatchfaceSettings {
     // Draw cache, try to only draw once the hour
     // Also can be used to SPI transfer form deep_sleep wake stub
     struct {
-        // Rotation&watchface, invalidates cache if changes
+        // Watchface, invalidates cache if changes (the flip is done by the controller)
         bool mDone : 1 {false};
-        uint8_t mRotation : 2 {2};
         uint8_t mType : 2 {0};
 
         struct Units {

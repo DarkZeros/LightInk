@@ -117,7 +117,7 @@ UI::Any Core::generateMenus() {
     UI::Menu{"Display", {
       UI::Bool{"Invert", kSettings.mDisplay.mInvert },
       UI::Bool{"Border", kSettings.mDisplay.mDarkBorder },
-      UI::Loop<uint8_t>{"Rotation", kSettings.mDisplay.mRotation, 4},
+      UI::Bool{"Flip 180", kSettings.mDisplay.mFlip},
       UI::Loop<DisplayMode>{"Menu Lut", kSettings.mDisplay.mMenuLut },
       UI::Loop<DisplayMode>{"Watch Lut", kSettings.mDisplay.mWatchLut },
     }},

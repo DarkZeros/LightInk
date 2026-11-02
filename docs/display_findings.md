@@ -266,6 +266,12 @@ T57: same, but the text is not very visible (grey).
   - The entry mode does the rest: X mirrored for 90°/180°, Y for 180°/270°
     (`0x11` = `03`, `02`, `00`, `01`). The RAM window starts at its corner; one
     shared function (`ramWindow`) serves the app driver and the wake stub.
+- **Done:** 90°/270° support dropped, only 0°/180° remain (setting "Flip 180").
+  Without the transpose check the watchface cache build went from 14.5 to
+  14.2 ms and a fixed shapes test from 10.06 to 9.29 ms (esp32, HW v4). The
+  image is 316 bytes smaller (16 of them in the wake stub).
+  - The drawing code must read the rotation from DRAM (`getRotation()`).
+    Reading `kState` (RTC slow memory) on every pixel cost 55% (14.5 to 22.9 ms).
 - **Decided:** keep the custom LUTs' sustain phase (`N_1`). Refreshing old pixels a
   little on every update avoids the greys and shadows that build up otherwise.
 - **Open:**

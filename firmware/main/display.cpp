@@ -23,14 +23,14 @@ static RTC_DATA_ATTR struct DisplayState {
   bool darkBorder : 1 {false};
   bool inverted : 1 {false};
   bool postInvert : 1 {false};
-  uint8_t rotation : 2 {0}; // Done by the controller, see setRotation()
+  bool flip : 1 {false}; // Done by the controller, see setFlip()
   bool oddPartials : 1 {false}; // Odd number of partial refreshes since the last full / SWRESET
   bool backStale : 1 {false}; // Last refresh was full: front = glass, back stale (T80)
   DisplayMode mode {DisplayMode::FULL};
 } kState;
 
 int RTC_IRAM_ATTR getSetDisplayMode() { return kState.mode; };
-uint8_t RTC_IRAM_ATTR getHwRotation() { return kState.rotation; };
+bool RTC_IRAM_ATTR getHwFlip() { return kState.flip; };
 
 // The RAM banks (docs/display_findings.md T76-T80):
 // - A partial (mode 2) refresh drives back -> front and swaps: afterwards the back
@@ -143,7 +143,7 @@ void Display::init() {
   _transfer(0xC7); // 0x0C7 is already the default
   _transfer(0b0);
   _transfer(0b000); // Gate scanning sequence, default 000
-  // Rotations are done with the entry mode instead, see setRotation()
+  // The 180 degrees rotation is done with the entry mode instead, see setFlip()
 
   if constexpr (kReduceBoosterTime) {
     // SSD1675B controller datasheet
@@ -216,7 +216,7 @@ void Display::_setCustomLut(const DisplayMode& mode) {
 
 void Display::_setRamArea(const Rect& rect){
   auto& [x, y, w, h] = rect;
-  const auto [xs, xe, ys, ye] = ramWindow(kState.rotation, x, y, w, h);
+  const auto [xs, xe, ys, ye] = ramWindow(kState.flip, x, y, w, h);
   _transferCommand(0x44);  // X start & end positions (Byte)
   _transfer(xs);
   _transfer(xe);
@@ -232,21 +232,15 @@ void Display::_setRamArea(const Rect& rect){
   //_transfer(0); // No need to write this, default is 0
 }
 
-// Every rotation in hardware, the software always draws at 0 degrees (see ramWindow).
-// GFX keeps the rotation too, so the drawing code reads it from DRAM: the RTC copy in
-// kState (slow memory) is for the wake stub and to skip the SPI write
-void Display::setRotation(uint8_t r)
+// 180 degrees in hardware, the software always draws unrotated (see ramWindow)
+void Display::setFlip(bool flip)
 {
-  r &= 3;
-  Adafruit_GFX::setRotation(r);
-  if (kState.rotation == r)
+  if (kState.flip == flip)
     return;
-  kState.rotation = r;
-  // Entry mode: bit 0 X+ unless mirrored, bit 1 Y+ unless mirrored, X first
-  static constexpr uint8_t kEntry[4] = {0b11, 0b10, 0b00, 0b01};
+  kState.flip = flip;
   _startTransfer();
-  _transferCommand(0x11); // Kept across the HW reset on every wake (T26)
-  _transfer(kEntry[r]);
+  _transferCommand(0x11); // Entry mode, kept across the HW reset on every wake (T26)
+  _transfer(flip ? 0b00 : 0b11); // X-/Y- when mirrored, X first
   _endTransfer();
 }
 
@@ -420,18 +414,8 @@ void Display::setInverted(bool inverted) {
   _endTransfer();
 }
 
-void Display::toBuffer(Rect& rect) const
-{
-  auto& [x, y, w, h] = rect;
-  if (getRotation() & 1) {
-    std::swap(x, y);
-    std::swap(w, h);
-  }
-}
-
 void Display::alignRect(Rect& rect) const
 {
-  toBuffer(rect);
   auto& [x, y, w, h] = rect;
 
   // Align x down, and w up
@@ -526,9 +510,6 @@ Rect Display::getTextRect(const char * str, int16_t xc, int16_t yc) {
 
 void Display::drawPixel(int16_t x, int16_t y, uint16_t color)
 {
-  // 90/270: the buffer holds the transposed picture, the controller mirrors the rest
-  if (getRotation() & 1)
-    std::swap(x, y);
   auto& ptr = buffer[(x >> 3) + y * WB_BITMAP];
   auto mask = 1 << (7 - (x & 7));
   if (color)
@@ -572,10 +553,20 @@ void Display::drawFastVLine(int16_t x, int16_t y, int16_t h,
     h = height() - y;
   }
 
-  if (getRotation() & 1) // Transposed buffer
-    drawFastRawHLine(y, x, h, color);
-  else
-    drawFastRawVLine(x, y, h, color);
+  uint8_t *ptr = &buffer[(x >> 3) + y * WB_BITMAP];
+  if (color > 0) {
+    uint8_t bit_mask = (0x80 >> (x & 7));
+    for (int16_t i = 0; i < h; i++) {
+      *ptr |= bit_mask;
+      ptr += WB_BITMAP;
+    }
+  } else {
+    uint8_t bit_mask = ~(0x80 >> (x & 7));
+    for (int16_t i = 0; i < h; i++) {
+      *ptr &= bit_mask;
+      ptr += WB_BITMAP;
+    }
+  }
 }
 
 /**************************************************************************/
@@ -611,53 +602,6 @@ void Display::drawFastHLine(int16_t x, int16_t y, int16_t w,
     w = width() - x;
   }
 
-  if (getRotation() & 1) // Transposed buffer
-    drawFastRawVLine(y, x, w, color);
-  else
-    drawFastRawHLine(x, y, w, color);
-}
-
-/**************************************************************************/
-/*!
-   @brief    Speed optimized vertical line drawing into the raw canvas buffer
-   @param    x   Line horizontal start point
-   @param    y   Line vertical start point
-   @param    h   length of vertical line to be drawn, including first point
-   @param    color   Binary (on or off) color to fill with
-*/
-/**************************************************************************/
-void Display::drawFastRawVLine(int16_t x, int16_t y, int16_t h,
-                                  uint16_t color) {
-  // x & y already in raw (rotation 0) coordinates, no need to transform.
-  uint8_t *ptr = &buffer[(x >> 3) + y * WB_BITMAP];
-
-  if (color > 0) {
-    uint8_t bit_mask = (0x80 >> (x & 7));
-    for (int16_t i = 0; i < h; i++) {
-      *ptr |= bit_mask;
-      ptr += WB_BITMAP;
-    }
-  } else {
-    uint8_t bit_mask = ~(0x80 >> (x & 7));
-    for (int16_t i = 0; i < h; i++) {
-      *ptr &= bit_mask;
-      ptr += WB_BITMAP;
-    }
-  }
-}
-
-/**************************************************************************/
-/*!
-   @brief    Speed optimized horizontal line drawing into the raw canvas buffer
-   @param    x   Line horizontal start point
-   @param    y   Line vertical start point
-   @param    w   length of horizontal line to be drawn, including first point
-   @param    color   Binary (on or off) color to fill with
-*/
-/**************************************************************************/
-void Display::drawFastRawHLine(int16_t x, int16_t y, int16_t w,
-                                  uint16_t color) {
-  // x & y already in raw (rotation 0) coordinates, no need to transform.
   uint8_t *ptr = &buffer[(x >> 3) + y * WB_BITMAP];
   size_t remainingWidthBits = w;
 

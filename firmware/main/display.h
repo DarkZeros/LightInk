@@ -29,13 +29,13 @@ struct DisplaySettings {
   // Settings that can be changed
   bool mInvert {false};
   bool mDarkBorder {false};
-  uint8_t mRotation {2};
+  bool mFlip {true}; // Rotated 180 degrees
   DisplayMode mMenuLut {FAST};
   DisplayMode mWatchLut {FAST};
 };
 
 extern int getSetDisplayMode();
-extern uint8_t getHwRotation();
+extern bool getHwFlip();
 extern int getRamWrites(); // RAM banks each write must go to (1 or 2), also in the wake stub
 extern void countRefresh(bool full); // After every 0x20 that refreshes, also in the wake stub
 
@@ -61,8 +61,7 @@ public:
 
   void init();
 
-  void setRotation(uint8_t r) override;
-  void toBuffer(Rect& rect) const; // View rect -> buffer rect (transposed for 90/270)
+  void setFlip(bool flip);
   void alignRect(Rect& rect) const;
   Rect getTextRect(const char * str, int16_t xc = -1, int16_t yc = -1);
 
@@ -75,8 +74,6 @@ public:
   // Optimized for our case from Canvas1
   void drawFastVLine(int16_t x, int16_t y, int16_t h, uint16_t color) override;
   void drawFastHLine(int16_t x, int16_t y, int16_t w, uint16_t color) override;
-  void drawFastRawVLine(int16_t x, int16_t y, int16_t h, uint16_t color);
-  void drawFastRawHLine(int16_t x, int16_t y, int16_t w, uint16_t color);
 
   void setDarkBorder(bool darkBorder);
   void setInverted(bool inverted);
@@ -117,20 +114,15 @@ private:
   void _endTransfer();
 };
 
-// Rotation in hardware (docs/display_findings.md T27, T52): the software always draws
-// at 0 degrees, into a buffer that is transposed for 90/270 (a byte then holds 8
-// vertical pixels), and the entry mode mirrors X for 90/180 and Y for 180/270 while
-// the controller writes. Buffer rect (x along the bytes) -> RAM window, from its start
-// corner. Shared by the driver and the wake stub.
+// 0 or 180 degrees, in hardware (docs/display_findings.md T27, T52): the software
+// always draws unrotated, and for 180 the entry mode mirrors X and Y while the
+// controller writes. Buffer rect -> RAM window, from its start corner. Shared by the
+// driver and the wake stub.
 struct RamWindow { uint8_t xs, xe, ys, ye; };
-FORCE_INLINE_ATTR RamWindow ramWindow(uint8_t rotation, uint8_t x, uint8_t y, uint8_t w, uint8_t h)
+FORCE_INLINE_ATTR RamWindow ramWindow(bool flip, uint8_t x, uint8_t y, uint8_t w, uint8_t h)
 {
-  const bool mirrorX = rotation == 1 || rotation == 2, mirrorY = rotation >= 2;
   constexpr int W = Display::WIDTH, H = Display::HEIGHT;
-  return {
-    uint8_t(mirrorX ? (W - 1 - x) >> 3 : x >> 3),
-    uint8_t(mirrorX ? (W - x - w) >> 3 : (x + w - 1) >> 3),
-    uint8_t(mirrorY ? H - 1 - y : y),
-    uint8_t(mirrorY ? H - y - h : y + h - 1),
-  };
+  if (flip)
+    return {uint8_t((W - 1 - x) >> 3), uint8_t((W - x - w) >> 3), uint8_t(H - 1 - y), uint8_t(H - y - h)};
+  return {uint8_t(x >> 3), uint8_t((x + w - 1) >> 3), y, uint8_t(y + h - 1)};
 }

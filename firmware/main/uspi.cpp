@@ -116,8 +116,8 @@ namespace uSpi {
   }
 
   void setRamArea(uint8_t x, uint8_t y, uint8_t w, uint8_t h) {
-    // Rotation in hardware: the window from its start corner (see ramWindow)
-    const auto [xs, xe, ys, ye] = ramWindow(getHwRotation(), x, y, w, h);
+    // 180 degrees in hardware: the window from its start corner (see ramWindow)
+    const auto [xs, xe, ys, ye] = ramWindow(getHwFlip(), x, y, w, h);
     command(0x44);  // X start & end positions (Byte)
     write(xs);
     write(xe);

@@ -4,9 +4,8 @@
 
 void Watchface::updateCache() {
   auto& cache = mSettings.mWatchface.mCache;
-  const auto& displ = mSettings.mConst.mDisplay;
   const auto& watch = mSettings.mWatchface;
-  if (cache.mDone && displ.mRotation == cache.mRotation && watch.mType == cache.mType)
+  if (cache.mDone && watch.mType == cache.mType)
     return; // Cache is valid!
   
   auto fillCache = [&](Rect& r, uint8_t* data, bool units, size_t len){
@@ -38,7 +37,6 @@ void Watchface::updateCache() {
   fillCache(cache.mDecimal.coord, cache.mDecimal.data, false, 6);
 
   cache.mDone = true;
-  cache.mRotation = displ.mRotation;
   cache.mType = watch.mType;
 }
 
@@ -97,7 +95,7 @@ void Watchface::draw() {
     mDisplay.drawRect(rd.x, rd.y, rd.w, rd.h, 1);
   }
 
-  // Convert to aligned rotated coords, makes easier the copy
+  // Align to bytes, makes easier the copy
   for (auto& c : composables) {
     mDisplay.alignRect(c);
   }

@@ -211,7 +211,7 @@ namespace {
 
   GFXcanvas1* sCanvas;
 
-  uint8_t rot() { return kSettings.mDisplay.mRotation & 3; }
+  uint8_t rot() { return kSettings.mDisplay.mFlip ? 2 : 0; }
 
   void toRam(int x, int y, int& rx, int& ry) {
     switch (rot()) {
