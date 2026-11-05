@@ -13,7 +13,7 @@ Three sub-projects live in one git repo:
 
 ## Building the firmware
 
-The ESP-IDF is a **git submodule** (`firmware/esp-idf`, a DarkZeros fork of v5.1 with local changes — do not assume it matches upstream). All commands run from `firmware/`.
+The ESP-IDF is a **git submodule** (`firmware/esp-idf`, branch `lightmyink_v6.1`: v6.1 plus five local sleep/touch patches — do not assume it matches upstream). All commands run from `firmware/`.
 
 ```bash
 git submodule update --init --recursive     # first checkout only
@@ -51,7 +51,7 @@ State that must survive deep sleep lives in `RTC_DATA_ATTR` globals — chiefly 
 
 ### The deep-sleep wake stub — the key power trick
 
-To update the clock every minute without a full ESP32 boot (~1ms of CPU on-time), the firmware registers a **ROM wake stub** (`esp_set_deep_sleep_wake_stub(&wake_stub_deepsleep)`). `main/deep_sleep.cpp` + `main/uspi.cpp` implement a minimal hardware SPI display driver (`uSpi` namespace) that runs entirely from `RTC_IRAM_ATTR` code during the stub, redraws the changed digits, and goes back to sleep — never running `app_main`. Anything the stub touches (functions, data) must be RTC/IRAM-resident. This is why there are effectively **two display drivers**: the full Adafruit-GFX-based one (`main/display*.cpp`) for normal draws, and the stripped `uSpi` one for wake-stub updates.
+To update the clock every minute without a full ESP32 boot (~1ms of CPU on-time), the firmware registers a **ROM wake stub** (`esp_set_deep_sleep_wake_stub(&wake_stub_deepsleep)`). `main/deep_sleep.cpp` + `main/uspi.cpp` implement a minimal hardware SPI display driver (`uSpi` namespace) that runs entirely from `RTC_IRAM_ATTR` code during the stub, redraws the changed digits, and goes back to sleep — never running `app_main`. Anything the stub touches (functions, data) must be RTC- or ROM-resident: IRAM and flash are not available there, so use the `rom_gpio_*` functions and only force-inlined HAL calls. This is why there are effectively **two display drivers**: the full Adafruit-GFX-based one (`main/display*.cpp`) for normal draws, and the stripped `uSpi` one for wake-stub updates.
 
 ### Hardware abstraction — `main/hardware.h`
 
@@ -78,6 +78,7 @@ WiFi/NTP/geolocation live in `Core::NTPSync()` (`core.cpp`): connects via creden
 - **C++23**, `-fpermissive -Wno-volatile`, size-optimized (`-Os`). Uses `magic_enum`, `fmt`, `std::optional`, `std::variant`, `std::future`/`std::async` (deferred + async launch) heavily.
 - Member fields use an `m`-prefix (`mTime`, `mDisplay`); compile-time constants use a `k`-prefix (`kSettings`, `kDSState`, `kMaxTimeGpsOn`).
 - Dependencies are managed two ways: git submodules under `firmware/components/` (see `.gitmodules`: WiFiManager, Adafruit GFX/BusIO, NTPClient, Time, ArduinoJson, ArduinoNvs, magic_enum, sunset, RadioLib) and IDF Component Manager entries in `main/idf_component.yml` (`espressif/fmt`, `espressif/arduino-esp32`). New `main/` source files must be added to the `srcs` list in `main/CMakeLists.txt`.
+- The Arduino core is `espressif/arduino-esp32` 4.0.0-rc1 from the component registry. `sdkconfig.defaults` holds the settings common to both targets, including `CONFIG_ARDUINO_SELECTIVE_COMPILATION` and the list of Arduino libraries left out.
 - `main/format.sh` documents the clang-format style (LLVM base + aligned macros/assignments), though most of the codebase predates it.
 
 ## Working on power-sensitive code

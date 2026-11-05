@@ -3,7 +3,7 @@
 
 #include "esp_attr.h"
 #include "hal/gpio_types.h"
-#include "soc/rtc_periph.h"
+#include "hal/rtc_io_periph.h"
 
 #include <atomic>
 

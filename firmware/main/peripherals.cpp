@@ -68,7 +68,8 @@ struct Speaker {
         .sleep_mode = LEDC_SLEEP_MODE_KEEP_ALIVE,
         .flags = {
           .output_invert = 0,
-        }
+        },
+        .deconfigure = false,
     };
     ledc_channel_config(&ledc_channel);
 

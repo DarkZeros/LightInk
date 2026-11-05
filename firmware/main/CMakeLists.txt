@@ -11,6 +11,8 @@ set(requires
     magic_enum
     sunset
     radioLib
+    esp_hal_wdt
+    esp_hal_touch_sens
 )
 
 set(privrequires

@@ -13,6 +13,7 @@ namespace {
 } // namespace
 
 #include "soc/rtc_periph.h"
+#include "hal/rtc_io_periph.h"
 #include "rom/gpio.h"
 #include "deep_sleep_utils.h"
 
@@ -28,7 +29,7 @@ bool Light::toggle() {
 }
 
 // Need to store this in RTC memory since will not be available in DeepSleep
-const RTC_SLOW_ATTR rtc_io_desc_t desc = rtc_io_desc[rtc_io_num_map[HW::kLightPin != (uint8_t)-1 ? HW::kLightPin : 0]];
+const RTC_SLOW_ATTR rtc_io_desc_t desc __attribute__((init_priority(101))) = rtc_io_desc[rtc_io_num_map[HW::kLightPin != (uint8_t)-1 ? HW::kLightPin : 0]];
 
 void Light::set(bool high) {
   if constexpr (HW::kLightPin == (uint8_t)(-1)) return;

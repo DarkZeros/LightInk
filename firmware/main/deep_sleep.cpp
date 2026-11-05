@@ -17,6 +17,7 @@
 #include "touch.h"
 // For WDT feeding
 #include "hal/wdt_hal.h"
+#include "hal/mwdt_periph.h"
 
 #include "hardware.h"
 #include "power.h"
@@ -28,6 +29,7 @@
 #include "esp_attr.h"
 #include "soc/rtc_periph.h"
 #include "soc/rtc.h"
+#include "hal/rtc_io_periph.h"
 
 RTC_DATA_ATTR DeepSleepState kDSState;
 
@@ -52,7 +54,7 @@ void RTC_IRAM_ATTR feed_wdt() {
 }
 
 #if (HW_VERSION >= 10)
-const RTC_DATA_ATTR rtc_io_desc_t descRes = rtc_io_desc[rtc_io_num_map[HW::Display::Res]];
+const RTC_DATA_ATTR rtc_io_desc_t descRes __attribute__((init_priority(101))) = rtc_io_desc[rtc_io_num_map[HW::Display::Res]];
 #endif
 
 void RTC_IRAM_ATTR microSleep(uint32_t micros) {

@@ -19,7 +19,18 @@
 
 RTC_DATA_ATTR Settings kSettings;
 
-auto wakeup_reason = Trace::wakeCause(esp_sleep_get_wakeup_cause());
+// IDF reports every pending cause as a mask, we act on one: same priority as the
+// esp_sleep_get_wakeup_cause() this replaces, for the sources we arm
+static esp_sleep_wakeup_cause_t wakeupCause() {
+    const auto causes = esp_sleep_get_wakeup_causes();
+    for (auto cause : {ESP_SLEEP_WAKEUP_TIMER, ESP_SLEEP_WAKEUP_EXT0, ESP_SLEEP_WAKEUP_EXT1, ESP_SLEEP_WAKEUP_TOUCHPAD}) {
+        if (causes & BIT(cause))
+            return cause;
+    }
+    return ESP_SLEEP_WAKEUP_UNDEFINED;
+}
+
+auto wakeup_reason = Trace::wakeCause(wakeupCause());
 
 Core::Core()
 : mTime{kSettings.mTime}

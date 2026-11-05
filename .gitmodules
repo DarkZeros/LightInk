@@ -1,7 +1,7 @@
 [submodule "esp-idf"]
 	path = firmware/esp-idf
 	url = https://github.com/DarkZeros/esp-idf
-	branch = v5.1
+	branch = lightmyink_v6.1
 [submodule "arduino"]
 	path = components/arduino
 	url = https://github.com/espressif/arduino-esp32.git

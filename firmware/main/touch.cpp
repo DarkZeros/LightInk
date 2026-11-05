@@ -4,7 +4,7 @@
 
 #include "soc/rtc.h"
 
-#include "hal/touch_sensor_hal.h"
+#include "hal/touch_sensor_legacy_hal.h"
 #include "driver/touch_sensor.h"
 #include "esp_sleep.h"
 

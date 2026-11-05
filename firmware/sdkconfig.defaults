@@ -1,0 +1,35 @@
+# Common to all targets; the per-target files sdkconfig.defaults.<target> add to this.
+
+# Only build the Arduino libraries we use.
+CONFIG_ARDUINO_SELECTIVE_COMPILATION=y
+CONFIG_ARDUINO_SELECTIVE_ESP_SR=n
+CONFIG_ARDUINO_SELECTIVE_ESP_Video=n
+CONFIG_ARDUINO_SELECTIVE_EEPROM=n
+CONFIG_ARDUINO_SELECTIVE_Preferences=n
+CONFIG_ARDUINO_SELECTIVE_Ticker=n
+CONFIG_ARDUINO_SELECTIVE_Zigbee=n
+CONFIG_ARDUINO_SELECTIVE_SD=n
+CONFIG_ARDUINO_SELECTIVE_SD_MMC=n
+CONFIG_ARDUINO_SELECTIVE_SPIFFS=n
+CONFIG_ARDUINO_SELECTIVE_FFat=n
+CONFIG_ARDUINO_SELECTIVE_LittleFS=n
+CONFIG_ARDUINO_SELECTIVE_Ethernet=n
+CONFIG_ARDUINO_SELECTIVE_PPP=n
+CONFIG_ARDUINO_SELECTIVE_ArduinoOTA=n
+CONFIG_ARDUINO_SELECTIVE_Matter=n
+CONFIG_ARDUINO_SELECTIVE_NetBIOS=n
+CONFIG_ARDUINO_SELECTIVE_BLE=n
+CONFIG_ARDUINO_SELECTIVE_BluetoothSerial=n
+CONFIG_ARDUINO_SELECTIVE_RainMaker=n
+CONFIG_ARDUINO_SELECTIVE_OpenThread=n
+CONFIG_ARDUINO_SELECTIVE_Insights=n
+
+# touch.cpp and the wake stub still use the legacy touch_pad API and the touch LL.
+CONFIG_TOUCH_SUPPRESS_DEPRECATE_WARN=y
+
+# IDF 6 moved FreeRTOS to flash by default, keep it in IRAM as it was on 5.x
+# so the wake timing and power stay comparable with what was measured there.
+CONFIG_FREERTOS_IN_IRAM=y
+
+# 6.x turns these into errors. Third party code, Arduino's core included, trips them.
+CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS=y
