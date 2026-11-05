@@ -9,64 +9,8 @@ set(privrequires
     arduino-esp32
 )
 
-set(srcs
-    RadioLib/src/Module.cpp
-    RadioLib/src/utils/FEC.cpp
-    RadioLib/src/utils/Utils.cpp
-    RadioLib/src/utils/CRC.cpp
-    RadioLib/src/utils/Cryptography.cpp
-    RadioLib/src/protocols/AX25/AX25.cpp
-    RadioLib/src/protocols/ExternalRadio/ExternalRadio.cpp
-    RadioLib/src/protocols/Morse/Morse.cpp
-    RadioLib/src/protocols/FSK4/FSK4.cpp
-    RadioLib/src/protocols/Hellschreiber/Hellschreiber.cpp
-    RadioLib/src/protocols/LoRaWAN/LoRaWANBands.cpp
-    RadioLib/src/protocols/LoRaWAN/LoRaWAN.cpp
-    RadioLib/src/protocols/Print/Print.cpp
-    RadioLib/src/protocols/Print/ITA2String.cpp
-    RadioLib/src/protocols/BellModem/BellModem.cpp
-    RadioLib/src/protocols/APRS/APRS.cpp
-    RadioLib/src/protocols/AFSK/AFSK.cpp
-    RadioLib/src/protocols/SSTV/SSTV.cpp
-    RadioLib/src/protocols/Pager/Pager.cpp
-    RadioLib/src/protocols/RTTY/RTTY.cpp
-    RadioLib/src/protocols/PhysicalLayer/PhysicalLayer.cpp
-    RadioLib/src/Hal.cpp
-    RadioLib/src/hal/Arduino/ArduinoHal.cpp
-    RadioLib/src/modules/SX128x/SX1282.cpp
-    RadioLib/src/modules/SX128x/SX1280.cpp
-    RadioLib/src/modules/SX128x/SX1281.cpp
-    RadioLib/src/modules/SX128x/SX128x.cpp
-    RadioLib/src/modules/RF69/RF69.cpp
-    RadioLib/src/modules/CC1101/CC1101.cpp
-    RadioLib/src/modules/LR11x0/LR11x0.cpp
-    RadioLib/src/modules/LR11x0/LR1110.cpp
-    RadioLib/src/modules/LR11x0/LR1121.cpp
-    RadioLib/src/modules/LR11x0/LR1120.cpp
-    RadioLib/src/modules/Si443x/Si4431.cpp
-    RadioLib/src/modules/Si443x/Si4430.cpp
-    RadioLib/src/modules/Si443x/Si4432.cpp
-    RadioLib/src/modules/Si443x/Si443x.cpp
-    RadioLib/src/modules/nRF24/nRF24.cpp
-    RadioLib/src/modules/LLCC68/LLCC68.cpp
-    RadioLib/src/modules/SX127x/SX1279.cpp
-    RadioLib/src/modules/SX127x/SX1273.cpp
-    RadioLib/src/modules/SX127x/SX127x.cpp
-    RadioLib/src/modules/SX127x/SX1276.cpp
-    RadioLib/src/modules/SX127x/SX1278.cpp
-    RadioLib/src/modules/SX127x/SX1277.cpp
-    RadioLib/src/modules/SX127x/SX1272.cpp
-    RadioLib/src/modules/SX123x/SX1233.cpp
-    RadioLib/src/modules/SX123x/SX1231.cpp
-    RadioLib/src/modules/SX126x/STM32WLx.cpp
-    RadioLib/src/modules/SX126x/SX1262.cpp
-    RadioLib/src/modules/SX126x/SX1261.cpp
-    RadioLib/src/modules/SX126x/SX126x.cpp
-    RadioLib/src/modules/SX126x/SX126x_commands.cpp
-    RadioLib/src/modules/SX126x/SX126x_config.cpp
-    RadioLib/src/modules/SX126x/SX1268.cpp
-    RadioLib/src/modules/SX126x/SX126x_LR_FHSS.cpp
-    RadioLib/src/modules/SX126x/STM32WLx_Module.cpp
-)
+# Everything but the HALs of other platforms
+file(GLOB_RECURSE srcs RELATIVE ${CMAKE_CURRENT_LIST_DIR} RadioLib/src/*.cpp)
+list(FILTER srcs EXCLUDE REGEX "/hal/(ESP-IDF|RPiPico|Stm32duino)/")
 
 idf_component_register(SRCS ${srcs} INCLUDE_DIRS ${includedirs} REQUIRES ${requires} PRIV_REQUIRES ${privrequires})

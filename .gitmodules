@@ -7,7 +7,8 @@
 	url = https://github.com/espressif/arduino-esp32.git
 [submodule "WiFiManager"]
 	path = firmware/components/WiFiManager/WiFiManager
-	url = https://github.com/tzapu/WiFiManager
+	url = https://github.com/DarkZeros/WiFiManager
+	branch = lightmyink_v6
 [submodule "BusIO"]
 	path = firmware/components/GfxLibrary/Adafruit_BusIO
 	url = https://github.com/adafruit/Adafruit_BusIO
