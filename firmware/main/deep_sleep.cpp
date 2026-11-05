@@ -44,11 +44,7 @@ void RTC_IRAM_ATTR turnOffGpio() {
 
 void RTC_IRAM_ATTR feed_wdt() {
   // More than 500ms it is better to reset the MWDT0
-#if(HW_VERSION < 10)
   TIMERG0.wdtwprotect.wdt_wkey = TIMG_WDT_WKEY_VALUE;
-#else
-  TIMERG0.wdtwprotect.wdt_wkey = TIMG_WDT_WKEY_V;
-#endif
   TIMERG0.wdtfeed.wdt_feed = 1;
   TIMERG0.wdtwprotect.wdt_wkey = 0;
 }
