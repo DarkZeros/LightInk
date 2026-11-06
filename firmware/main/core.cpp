@@ -463,8 +463,6 @@ bool Core::NTPSync()
         ESP_LOGE("NTP", "WiFi failed");
         return false;
     }
-    // Radio off on every way out, before powerLock drops the rail
-    struct WifiOff { ~WifiOff() { WiFi.disconnect(true); } } wifiOff;
 
     if (!syncTime()) {
         ESP_LOGE("NTP", "NTP sync failed");

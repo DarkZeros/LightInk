@@ -55,6 +55,10 @@ namespace Signal {
     void send() const;
   };
   using Sequence = std::variant<BasicOOK, FixedWidthPWM>;
+  struct Entry {
+    const char* mName;
+    Sequence mSequence;
+  };
   struct Group {
     const char* mName;
     std::span<const Entry> mSequences;
