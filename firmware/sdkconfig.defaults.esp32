@@ -39,3 +39,9 @@ CONFIG_LWIP_TCP_WND_DEFAULT=5744
 CONFIG_LWIP_HOOK_IP6_INPUT_NONE=y
 CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM=y
 CONFIG_DIAG_USE_EXTERNAL_LOG_WRAP=y
+
+# Everything already runs on core 0, so don't start the second core.
+CONFIG_FREERTOS_UNICORE=y
+# Single core would also allow heap in RTC fast memory, next to the wake stub.
+# That changes how deep sleep is entered, keep the path the stub was tested on.
+CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP=n
