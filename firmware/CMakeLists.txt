@@ -16,6 +16,10 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(COMPILE_OPTIONS "-fdebug-prefix-map=${CMAKE_BINARY_DIR}=./build" APPEND)
 idf_build_set_property(COMPILE_OPTIONS "-fno-working-directory" APPEND)
 
+# The only HTTP request is plain http to ip-api.com. Without this, Arduino's
+# HTTPClient links NetworkClientSecure and with it the whole TLS stack.
+add_compile_definitions(HTTPCLIENT_NOSECURE)
+
 project(LightInk)
 
 if(CCACHE_FOUND)

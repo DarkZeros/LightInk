@@ -77,6 +77,8 @@ The watch is the BLE **central** (NimBLE), the Android app the peripheral that a
 
 WiFi/NTP/geolocation live in `Core::NTPSync()` (`core.cpp`): connects via credentials in `secrets.cpp`, syncs SNTP (`pool.ntp.org`), and fetches lat/lon + timezone offset from `ip-api.com`. WiFi is only powered on transiently because it is expensive.
 
+That request is plain http, and nothing else uses the network. To keep the TLS stack out of the binary, `firmware/CMakeLists.txt` builds Arduino's HTTPClient with `HTTPCLIENT_NOSECURE`: `begin()` of an `https://` URL then returns false, so remove the define before adding one.
+
 ## Conventions
 
 - **C++23**, `-fpermissive -Wno-volatile`, size-optimized (`-Os`). Uses `magic_enum`, `fmt`, `std::optional`, `std::variant`, `std::future`/`std::async` (deferred + async launch) heavily.
