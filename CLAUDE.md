@@ -29,6 +29,7 @@ Other useful `idf.py` commands: `idf.py build`, `idf.py flash`, `idf.py monitor`
 ### Targets and config
 
 - Two targets: **esp32** (older HW, up to board v4) and **esp32s3** (current WIP board, v10). Per-target defaults live in `sdkconfig.defaults.esp32` / `sdkconfig.defaults.esp32s3`; the active config is `sdkconfig` (gitignored, regenerated).
+- The esp32 runs FreeRTOS on a single core (`CONFIG_FREERTOS_UNICORE` in `sdkconfig.defaults.esp32`), the S3 on both.
 - Partition table is custom (`partitions.csv`): two 1.5M OTA slots and no factory, `ota_0` boots when `otadata` is blank.
 - `main/secrets.cpp` is **gitignored** — it defines `kWifiNetworks` and `kSignals` (declared in `main/secrets.h`) and holds the real WiFi passwords and radio codes. `main/CMakeLists.txt` creates it from the tracked `main/secrets.default.cpp` (placeholders) when it is missing and never overwrites it. When `secrets.h` changes, update `secrets.default.cpp` in the same commit: it is not compiled once a local `secrets.cpp` exists.
 
