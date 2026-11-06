@@ -21,10 +21,11 @@ void stats(const char* when) {
                  st.free_entries, st.total_entries, st.namespace_count);
 }
 
-// Real errors only: a missing key or namespace is normal before the first write
+// Real errors only: a missing key or namespace is normal before the first write.
+// With the code as well: the names are left out of the build (ESP_ERR_TO_NAME_LOOKUP)
 esp_err_t check(esp_err_t err, const char* what, const char* key) {
     if ((err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) || kLog)
-        ESP_LOGE(TAG, "%s %s: %s", what, key, esp_err_to_name(err));
+        ESP_LOGE(TAG, "%s %s: %s (0x%x)", what, key, esp_err_to_name(err), err);
     return err;
 }
 
@@ -60,7 +61,7 @@ bool init() {
         HighRail rail; // Init may fix up or erase pages
         const auto err = nvs_flash_init();
         if (err != ESP_OK)
-            ESP_LOGE(TAG, "nvs %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "nvs %s (0x%x)", esp_err_to_name(err), err);
         sUp = err == ESP_OK;
     }
     return sUp;

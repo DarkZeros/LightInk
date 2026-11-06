@@ -44,3 +44,12 @@ CONFIG_BT_NIMBLE_NVS_PERSIST=n
 
 # 6.x turns these into errors. Third party code, Arduino's core included, trips them.
 CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS=y
+
+# Features the watch doesn't use, removed to save flash.
+# esp_modem is an unused Arduino dependency, and its PPP mode forces PPP on in lwIP.
+CONFIG_ESP_MODEM_USE_PPP_MODE=n
+CONFIG_LWIP_PPP_SUPPORT=n
+CONFIG_ESP_ERR_TO_NAME_LOOKUP=n
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n
+CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
+CONFIG_ESP_PHY_ENABLE_VERSION_PRINT=n
