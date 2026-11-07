@@ -1,6 +1,6 @@
 # About hardware
 
-The hardware is the mixture of [Case](hardware/case/CASE.md), [PCB](hardware/pcb/PCB.md) and external components.
+The hardware is the mixture of [Case](case/CASE.md), [PCB](pcb/PCB.md) and external components.
 
 For the first 2 please visit those pages.
 
