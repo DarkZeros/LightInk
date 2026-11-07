@@ -7,8 +7,7 @@
 	url = https://github.com/espressif/arduino-esp32.git
 [submodule "WiFiManager"]
 	path = firmware/components/WiFiManager/WiFiManager
-	url = https://github.com/DarkZeros/WiFiManager
-	branch = lightmyink_v6
+	url = https://github.com/tzapu/WiFiManager
 [submodule "BusIO"]
 	path = firmware/components/GfxLibrary/Adafruit_BusIO
 	url = https://github.com/adafruit/Adafruit_BusIO
@@ -26,7 +25,7 @@
 	url = https://github.com/bblanchon/ArduinoJson
 [submodule "ArduinoNvs"]
 	path = firmware/components/ArduinoNvs/ArduinoNvs
-	url = https://github.com/DarkZeros/ArduinoNvs
+	url = https://github.com/rpolitex/ArduinoNvs
 [submodule "components/magic_enum/magic_enum"]
 	path = firmware/components/magic_enum/magic_enum
 	url = https://github.com/Neargye/magic_enum.git
