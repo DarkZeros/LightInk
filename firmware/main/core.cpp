@@ -258,6 +258,9 @@ Core::Core()
         Power::hold((gpio_num_t)HW::Lora::Cs, true);
     }
 
+    // Who is setting this to ON manually ?? Display + LightSleep?
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
+
     // We can only run wakeupstub when on watchface mode
     if (kSettings.mUi.mDepth < 0) {
         kDSState.currentMinutes = mNow.Minute + firstMinutesSleep;
@@ -268,12 +271,14 @@ Core::Core()
         if (kDSState.minutes > 0) {
             // IDF refuses ext0 together with touch on ESP32 (a rev 0/1 only limitation),
             // so only set up the pin here, the wake stub enables the ext0 trigger itself
-            // while the display refreshes. RTC_PERIPH stays on due to the touch wakeup.
+            // while the display refreshes. ext0 needs RTC_PERIPH, which IDF powers off when
+            // only touch is armed, so keep it on or the display never gets hibernated.
             if constexpr (HW::kHasDisplayBusyWake) {
                 constexpr auto busy = (gpio_num_t)HW::Display::Busy;
                 rtc_gpio_init(busy);
                 rtc_gpio_set_direction(busy, RTC_GPIO_MODE_INPUT_ONLY);
                 rtcio_ll_ext0_set_wakeup_pin(rtc_io_number_get(busy), 0);
+                esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
             }
             esp_set_deep_sleep_wake_stub(&wake_stub_deepsleep);
         }
@@ -284,9 +289,6 @@ Core::Core()
         esp_set_deep_sleep_wake_stub(NULL);
         esp_sleep_enable_timer_wakeup(10'000'000);
     }
-
-    // Who is setting this to ON manually ?? Display + LightSleep?
-    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
 
     mTouch.clear(); // Clear the mask just before entering the sleep
 
