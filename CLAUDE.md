@@ -29,7 +29,7 @@ Other useful `idf.py` commands: `idf.py build`, `idf.py flash`, `idf.py monitor`
 ### Targets and config
 
 - Two targets: **esp32** (older HW, up to board v4) and **esp32s3** (current WIP board, v10). Per-target defaults live in `sdkconfig.defaults.esp32` / `sdkconfig.defaults.esp32s3`; the active config is `sdkconfig` (gitignored, regenerated).
-- Partition table is custom (`partitions.csv`): a 2M factory + 1M OTA slot.
+- Partition table is custom (`partitions.csv`): two 1.5M OTA slots and no factory, `ota_0` boots when `otadata` is blank.
 - `main/secrets.cpp` is **gitignored** — it defines `kWifiNetworks` and `kSignals` (declared in `main/secrets.h`). It must exist for the build to link; create it locally.
 
 ### Tests

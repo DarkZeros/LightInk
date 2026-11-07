@@ -59,7 +59,7 @@ idf_component_register(SRCS ${srcs} INCLUDE_DIRS ${includedirs} REQUIRES ${requi
 
 #set_property(TARGET ${COMPONENT_TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 #set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-target_compile_options(${COMPONENT_TARGET} PUBLIC
+target_compile_options(${COMPONENT_TARGET} PRIVATE
     #-flto
     -Wno-volatile
     -fpermissive
