@@ -42,6 +42,8 @@ bool Gps::read(uint32_t timeout) const {
 
   // Initialize HW serial to receive data
   HardwareSerial mSerial{2};
+  // The GPS drives this line, and on ESP32 it is an input-only pad with no pull-up to enable
+  mSerial.enableRxInternalPull(false);
   mSerial.begin(HW::Gps::BaudRate, SERIAL_8N1, HW::Gps::Rx, -1/*, HW::Gps::Tx*/, false, timeout);
   uint32_t maxWait = millis() + timeout;
 
