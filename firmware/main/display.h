@@ -84,6 +84,7 @@ public:
   // The last refresh was full: the front buffer holds the glass, no re-write needed
   bool lastRefreshFull() const;
   void hibernate();
+  void wake(); // Out of hibernate(), for another frame in the same wake. No-op when awake
   void waitWhileBusy();
   void writeRect(Rect rect);
   void writeAlignedRect(const Rect& rect);
@@ -98,6 +99,7 @@ public:
   void drawMoonFast(float p, int x, int y, uint8_t r, uint16_t on, uint16_t off);
 
 private:
+  void _hwReset();
   int _ramWrites() const; // RAM banks each write goes to, see getRamWrites()
 
   // Called internally in middle of transfer

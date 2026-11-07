@@ -26,6 +26,7 @@ static RTC_DATA_ATTR struct DisplayState {
   bool flip : 1 {false}; // Done by the controller, see setFlip()
   bool oddPartials : 1 {false}; // Odd number of partial refreshes since the last full / SWRESET
   bool backStale : 1 {false}; // Last refresh was full: front = glass, back stale (T80)
+  bool hibernated : 1 {false}; // In deep sleep (0x10), kept across ESP deep sleeps
   DisplayMode mode {DisplayMode::FULL};
 } kState;
 
@@ -114,7 +115,16 @@ Display::Display() : Adafruit_GFX(WIDTH, HEIGHT) {
   digitalWrite(HW::Display::Dc, HIGH);
   digitalWrite(HW::Display::Res, HIGH);
   
-  // Reset HW / Exit Deep Sleep
+  _hwReset();
+
+  // Display requires ISR service for busy pin
+  gpio_intr_disable((gpio_num_t)HW::Display::Busy);
+  gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
+  init();
+}
+
+// Exits the controller deep sleep
+void Display::_hwReset() {
   if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
     Power::hold((gpio_num_t)HW::Display::Res, false);
   gpio_set_level((gpio_num_t)HW::Display::Res, LOW);
@@ -123,11 +133,7 @@ Display::Display() : Adafruit_GFX(WIDTH, HEIGHT) {
   //pinMode(HW::Display::Res, INPUT_PULLUP);
   if (rtc_gpio_is_valid_gpio((gpio_num_t)HW::Display::Res))
     Power::hold((gpio_num_t)HW::Display::Res, true);
-
-  // Display requires ISR service for busy pin
-  gpio_intr_disable((gpio_num_t)HW::Display::Busy);
-  gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1);
-  init();
+  kState.hibernated = false;
 }
 
 void Display::init() {
@@ -371,14 +377,16 @@ void Display::waitWhileBusy() {
     .mode = GPIO_MODE_INPUT,
     .pull_up_en = GPIO_PULLUP_DISABLE,
     .pull_down_en = GPIO_PULLDOWN_DISABLE,
-    .intr_type = GPIO_INTR_LOW_LEVEL,
+    .intr_type = GPIO_INTR_DISABLE,
   };
   gpio_config(&busy_conf);
-  // Setting the GPIO config reenables the interrupt
 
-  // Set the wakeup on busy, in case tasks sleep the chip as well
+  // Set the wakeup on busy, in case tasks sleep the chip as well. This also sets the
+  // low level interrupt type, still disabled
   gpio_wakeup_enable((gpio_num_t)HW::Display::Busy, GPIO_INTR_LOW_LEVEL);
   esp_sleep_enable_gpio_wakeup();
+  // Enables the interrupt once the handler is in. BUSY can already be low here (after
+  // wake()), and a level interrupt without a handler re-fires forever
   gpio_isr_handler_add((gpio_num_t)HW::Display::Busy, isr, (void*) 0);
 
   if (xSemaphoreTake(sSem, 10'000 / portTICK_PERIOD_MS) != pdTRUE) {
@@ -502,6 +510,18 @@ void Display::hibernate()
   // Mode 2 (0b11) loses the controller state within a minute (T50): it would need a
   // SWRESET-level re-init and both RAM banks rewritten on every wake
   _endTransfer();
+  kState.hibernated = true;
+}
+
+void Display::wake()
+{
+  if (!kState.hibernated)
+    return;
+  _hwReset();
+  // The datasheet asks for 10 ms and a BUSY wait after the HW reset, but the
+  // constructor and the wake stub send commands right after it and have always worked
+  // delay(10);
+  // waitWhileBusy();
 }
 
 Rect Display::getTextRect(const char * str, int16_t xc, int16_t yc) {

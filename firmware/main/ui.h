@@ -36,7 +36,7 @@ using has_##func = detect_##func<T, void, Args...>;
 
 // Generate methods the classes can implement to override defaults
 GENERATE_HAS(name) // What to print by parents
-GENERATE_HAS(render) // What to render to screen
+GENERATE_HAS(render) // Draws into the display buffer, Core::draw() puts it on the panel
 GENERATE_HAS(sub) // Used recursively to get deeper elements
 GENERATE_HAS(ref) // Used to get the actual object, not the wrapper
 GENERATE_HAS(capture_input) // Used to automatically do depth++
@@ -161,7 +161,6 @@ struct NumberRange : public Name {
         d.print("< ");
         d.print(ref);
         d.println(" >");
-        d.writeAllAndRefresh(); 
     }
 };
 

@@ -26,6 +26,7 @@ public:
     Core();
 
     void handleTouch();
+    void draw();
     const UI::Any& findUi();
     UI::Any generateMenus();
     void regenerateMenus() { mUi.emplace(generateMenus()); };

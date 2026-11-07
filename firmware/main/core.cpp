@@ -170,43 +170,9 @@ Core::Core()
         }
     }
 
-    // Common display preparations, post UI Events processing
-    auto& disp = kSettings.mDisplay;
-    mDisplay.setFlip(disp.mFlip);
-    mDisplay.setDarkBorder(disp.mDarkBorder ^ disp.mInvert);
-    mDisplay.setInverted(!disp.mInvert);
-    mDisplay.setTextColor(0xFF);
+    draw();
 
-    // Show watch face or menu ?
-    if (kSettings.mUi.mDepth < 0) {
-        mDisplay.setRefreshMode(kSettings.mDisplay.mWatchLut);
-        #define ARGS kSettings, kSettings.mWatchface, *this, mDisplay
-        // Instantiate the watchface type we are using
-        switch(kSettings.mWatchface.mType) {
-            case 0: default: DefaultWatchface(ARGS).draw(); break;
-            case 1: EclipseWatchface(ARGS).draw(); break;
-            // case 2: break;
-            // case 3: break;
-        }
-        #undef ARGS
-        Light::off(); // Always turn off light exiting the Menus
-    } else {
-        mDisplay.setRefreshMode(kSettings.mDisplay.mMenuLut);
-        kSettings.mWatchface.mLastDraw.mValid = false;
-        std::visit([&](auto& e){
-            if constexpr (has_render<decltype(e), Display&>::value) {
-                e.render(mDisplay);
-            } else {
-                mDisplay.setTextSize(3);
-                mDisplay.setTextColor(1, 0);
-                mDisplay.println("UNIMPLEMENTED");
-                mDisplay.println("PRESS BACK");
-            }
-        }, findUi());
-    }
-
-    // Finish display & pending tasks, then setup touch
-    mDisplay.hibernate();
+    // Finish pending tasks, then setup touch
     finishTasks();
     mTouch.enable();
 
@@ -294,6 +260,53 @@ Core::Core()
     esp_deep_sleep_disable_rom_logging();
     esp_deep_sleep_start();
     ESP_LOGE("deepSleep", "never reach!");
+}
+
+// The only place that puts a frame on the panel: elements just draw into the buffer.
+// Hibernates after the refresh, the analog must not stay on while tasks run. Can run
+// more than once per wake, display settings may have changed since the last one
+void Core::draw() {
+    mDisplay.wake();
+
+    auto& disp = kSettings.mDisplay;
+    mDisplay.setFlip(disp.mFlip);
+    mDisplay.setDarkBorder(disp.mDarkBorder ^ disp.mInvert);
+    mDisplay.setInverted(!disp.mInvert);
+    mDisplay.setTextColor(0xFF);
+
+    // Show watch face or menu ?
+    if (kSettings.mUi.mDepth < 0) {
+        mDisplay.setRefreshMode(kSettings.mDisplay.mWatchLut);
+        #define ARGS kSettings, kSettings.mWatchface, *this, mDisplay
+        // Instantiate the watchface type we are using. It writes and refreshes by
+        // itself, its partial updates depend on what it left in the display RAM
+        switch(kSettings.mWatchface.mType) {
+            case 0: default: DefaultWatchface(ARGS).draw(); break;
+            case 1: EclipseWatchface(ARGS).draw(); break;
+            // case 2: break;
+            // case 3: break;
+        }
+        #undef ARGS
+        Light::off(); // Always turn off light exiting the Menus
+    } else {
+        mDisplay.setRefreshMode(kSettings.mDisplay.mMenuLut);
+        kSettings.mWatchface.mLastDraw.mValid = false;
+        mDisplay.fillScreen(0);
+        mDisplay.setCursor(0, 0);
+        std::visit([&](auto& e){
+            if constexpr (has_render<decltype(e), Display&>::value) {
+                e.render(mDisplay);
+            } else {
+                mDisplay.setTextSize(3);
+                mDisplay.setTextColor(1, 0);
+                mDisplay.println("UNIMPLEMENTED");
+                mDisplay.println("PRESS BACK");
+            }
+        }, findUi());
+        mDisplay.writeAllAndRefresh();
+    }
+
+    mDisplay.hibernate();
 }
 
 const UI::Any& Core::findUi() {
