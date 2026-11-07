@@ -9,6 +9,7 @@ namespace {
   RTC_DATA_ATTR std::optional<ArduinoHal> kHal;
   RTC_DATA_ATTR std::optional<Module> kModule;
   RTC_DATA_ATTR std::optional<SX1262> kRadio;
+  RTC_DATA_ATTR bool kListening {false};
 }
 
 OOK::OOK(uint32_t bitUsDuration, float freq, int8_t minPower, int8_t maxPower)
@@ -125,6 +126,11 @@ void Radio::startReceive()
   kRadio->begin(434.0, 125.0, 9, 7, 0x12, 10, 8, 0, false);
 
   kRadio->startReceive(); // 4.65mA @ 3.3V
+  kListening = true;
+}
+
+bool Radio::isListening() {
+  return kListening;
 }
 
 void Radio::sendSignal(const Signal::Sequence& seq) {
@@ -142,6 +148,7 @@ void Radio::sleep()
 
   kRadio->sleep(false); // ~0.3 uA @ 3.3V
   // kRadio->sleep(); // ~0.7 uA @3.3V
+  kListening = false;
 }
 
 void Radio::readLoraPck() {

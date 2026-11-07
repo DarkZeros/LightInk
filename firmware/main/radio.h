@@ -84,6 +84,8 @@ public:
 
   static void startReceive();
   static void sleep();
+  // True from startReceive() until sleep(), the only time DIO1 can wake us
+  static bool isListening();
   static void sendSignal(const Signal::Sequence& seq);
 
   bool sendLoraPck(const std::string& pck);
