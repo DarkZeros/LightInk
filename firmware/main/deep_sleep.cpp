@@ -29,6 +29,7 @@
 #include "esp_attr.h"
 #include "soc/rtc_periph.h"
 #include "soc/rtc.h"
+#include "hal/rtc_cntl_ll.h"
 #include "hal/rtc_io_periph.h"
 
 RTC_DATA_ATTR DeepSleepState kDSState;
@@ -65,12 +66,19 @@ void RTC_IRAM_ATTR microSleep(uint32_t micros) {
   feed_wdt();
 }
 
-// The wake stub sleeps with the wakeup sources of the last deep sleep, toggle ext0 manually
+// The wake stub sleeps with the wakeup sources of the last deep sleep, so route ext1 manually.
+// It has one level for all its pins: BUSY (low) takes it during a refresh, then it goes back
+// to DIO1 (high) if the radio is listening. DIO1 stays high, so a packet in between isn't lost
 FORCE_INLINE_ATTR void setBusyWakeup(bool enable) {
+  constexpr uint32_t trigger = RTC_EXT1_TRIG_EN << RTC_CNTL_WAKEUP_ENA_S;
+  rtc_cntl_ll_ext1_clear_wakeup_status();
   if (enable) {
-    SET_PERI_REG_MASK(RTC_CNTL_WAKEUP_STATE_REG, RTC_EXT0_TRIG_EN << RTC_CNTL_WAKEUP_ENA_S);
+    rtc_cntl_ll_ext1_set_wakeup_pins(kDSState.busyWakePin, 0);
+    SET_PERI_REG_MASK(RTC_CNTL_WAKEUP_STATE_REG, trigger);
+  } else if (kDSState.radioWakePin) {
+    rtc_cntl_ll_ext1_set_wakeup_pins(kDSState.radioWakePin, kDSState.radioWakePin);
   } else {
-    CLEAR_PERI_REG_MASK(RTC_CNTL_WAKEUP_STATE_REG, RTC_EXT0_TRIG_EN << RTC_CNTL_WAKEUP_ENA_S);
+    CLEAR_PERI_REG_MASK(RTC_CNTL_WAKEUP_STATE_REG, trigger);
   }
 }
 
@@ -98,7 +106,7 @@ void RTC_IRAM_ATTR wake_stub_deepsleep(void)
   if (kDSState.displayBusy) {
     kDSState.displayBusy = false;
     if constexpr (HW::kHasDisplayBusyWake) {
-      // BUSY stays low once the display is idle, it would wake us again
+      // Only listen to BUSY during the refresh
       setBusyWakeup(false);
     }
 

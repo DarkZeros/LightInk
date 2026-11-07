@@ -272,11 +272,8 @@ namespace Trace {
     const bool pending = nextStep(sScriptPos) < sizeof(kScript) - 1;
     if (pending) {
       // Wake the full app for the next step, not the minute-update stub
-      if (stubArmed) {
+      if (stubArmed)
         esp_set_deep_sleep_wake_stub(NULL);
-        if constexpr (HW::kHasDisplayBusyWake)
-          esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
-      }
       esp_sleep_enable_timer_wakeup(CONFIG_LIGHTINK_TRACE_STEP_MS * 1000ULL);
       sScriptArmed = true;
     } else if (!sScriptEnded && sizeof(kScript) > 1) {

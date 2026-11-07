@@ -22,6 +22,10 @@ struct DeepSleepState {
   bool redrawDec {false};
   bool displayBusy {false};
 
+  // ext1 masks (RTC IO numbers): BUSY during a refresh, DIO1 otherwise, 0 if not listening
+  uint32_t busyWakePin {0};
+  uint32_t radioWakePin {0};
+
   // Light
   uint8_t lightPad {0};
 };

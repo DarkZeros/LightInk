@@ -2,7 +2,6 @@
 #include <fmt/format.h>
 
 #include "driver/rtc_io.h"
-#include "hal/rtc_io_ll.h"
 
 #include "core.h"
 #include "deep_sleep.h"
@@ -23,7 +22,7 @@ RTC_DATA_ATTR Settings kSettings;
 // esp_sleep_get_wakeup_cause() this replaces, for the sources we arm
 static esp_sleep_wakeup_cause_t wakeupCause() {
     const auto causes = esp_sleep_get_wakeup_causes();
-    for (auto cause : {ESP_SLEEP_WAKEUP_TIMER, ESP_SLEEP_WAKEUP_EXT0, ESP_SLEEP_WAKEUP_EXT1, ESP_SLEEP_WAKEUP_TOUCHPAD}) {
+    for (auto cause : {ESP_SLEEP_WAKEUP_TIMER, ESP_SLEEP_WAKEUP_EXT1, ESP_SLEEP_WAKEUP_TOUCHPAD}) {
         if (causes & BIT(cause))
             return cause;
     }
@@ -142,9 +141,6 @@ Core::Core()
         ESP_LOGE("lora", "ext1 wakeup");
         mRadio.readLoraPck();
         break;
-    case ESP_SLEEP_WAKEUP_EXT0: // Used for display busy wakeup
-        ESP_LOGE("ext0", "wakeup ?"); // Should never be hit
-        break;
     default: // First time boot!
         ESP_LOGE("", "boot %lu unkown wakeup reason %d", micros(), wakeup_reason);
         break;
@@ -259,9 +255,6 @@ Core::Core()
         Power::hold((gpio_num_t)HW::Lora::Cs, true);
     }
 
-    // Who is setting this to ON manually ?? Display + LightSleep?
-    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
-
     // We can only run wakeupstub when on watchface mode
     if (kSettings.mUi.mDepth < 0) {
         kDSState.currentMinutes = mNow.Minute + firstMinutesSleep;
@@ -270,16 +263,17 @@ Core::Core()
         kDSState.stepSize = stepSize;
         // Only trigger the wakeupstub if there is more than 1 minute left
         if (kDSState.minutes > 0) {
-            // IDF refuses ext0 together with touch on ESP32 (a rev 0/1 only limitation),
-            // so only set up the pin here, the wake stub enables the ext0 trigger itself
-            // while the display refreshes. ext0 needs RTC_PERIPH, which IDF powers off when
-            // only touch is armed, so keep it on or the display never gets hibernated.
+            // BUSY wakes us through ext1, it works with RTC_PERIPH off unlike ext0. Only
+            // set up the pin here, the wake stub arms ext1 itself while the display
+            // refreshes. RTC_PERIPH is off, so the hold is what keeps the pad configured.
             if constexpr (HW::kHasDisplayBusyWake) {
                 constexpr auto busy = (gpio_num_t)HW::Display::Busy;
                 rtc_gpio_init(busy);
                 rtc_gpio_set_direction(busy, RTC_GPIO_MODE_INPUT_ONLY);
-                rtcio_ll_ext0_set_wakeup_pin(rtc_io_number_get(busy), 0);
-                esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+                Power::hold(busy, true);
+                kDSState.busyWakePin = BIT(rtc_io_number_get(busy));
+                kDSState.radioWakePin = HW::kHasLora && Radio::isListening()
+                    ? BIT(rtc_io_number_get((gpio_num_t)HW::Lora::Dio1)) : 0;
             }
             esp_set_deep_sleep_wake_stub(&wake_stub_deepsleep);
         }
@@ -290,6 +284,9 @@ Core::Core()
         esp_set_deep_sleep_wake_stub(NULL);
         esp_sleep_enable_timer_wakeup(10'000'000);
     }
+
+    // Who is setting this to ON manually ?? Display + LightSleep?
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_AUTO);
 
     mTouch.clear(); // Clear the mask just before entering the sleep
 

@@ -100,6 +100,10 @@ Display::Display() : Adafruit_GFX(WIDTH, HEIGHT) {
     uSpi::init(Display::kOverdriveSPI);
   }
 
+  // The wake stub needs BUSY held across sleep, the pad is frozen until released
+  if constexpr (HW::kHasDisplayBusyWake)
+    Power::hold((gpio_num_t)HW::Display::Busy, false);
+
   // Set pins
   pinMode(HW::Display::Cs, OUTPUT);
   pinMode(HW::Display::Dc, OUTPUT);
