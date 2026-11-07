@@ -2,6 +2,7 @@
 #include "sys/time.h"
 #include "esp32-hal-log.h"
 #include "esp_private/esp_clk.h"
+#include "sdkconfig.h"
 
 #include <algorithm>
 
@@ -44,8 +45,17 @@ void Time::setTime(const timeval tm) {
     readTime();
 }
 
+#if CONFIG_IDF_TARGET_ESP32
+extern "C" void __real_esp_clk_slowclk_cal_set(uint32_t cal);
+#endif
+
 void Time::calSet() {
+#if CONFIG_IDF_TARGET_ESP32
+    // The wrapped one ignores IDF's calls, see sleep_wrap.cpp
+    __real_esp_clk_slowclk_cal_set(mSettings.mCalibration);
+#else
     esp_clk_slowclk_cal_set(mSettings.mCalibration);
+#endif
 }
 void Time::calUpdate() {
     if (!mSettings.mSync) {

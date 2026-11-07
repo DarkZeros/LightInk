@@ -56,6 +56,10 @@ set(srcs
     radio.cpp
 )
 
+if(IDF_TARGET STREQUAL "esp32")
+    list(APPEND srcs sleep_wrap.cpp)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -83,3 +87,11 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
 # for a code by every sync. The option has no Kconfig entry
 idf_component_get_property(bt_lib bt COMPONENT_LIB)
 target_compile_definitions(${bt_lib} PRIVATE MYNEWT_VAL_BLE_RESTART_PAIR=0)
+
+if(IDF_TARGET STREQUAL "esp32")
+    target_link_libraries(${COMPONENT_LIB} INTERFACE
+        "-Wl,--wrap=rtc_clk_cal"
+        "-Wl,--wrap=esp_clk_slowclk_cal_set"
+        "-Wl,--wrap=rtc_sleep_low_init"
+    )
+endif()

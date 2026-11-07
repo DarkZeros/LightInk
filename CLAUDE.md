@@ -13,7 +13,7 @@ Three sub-projects live in one git repo:
 
 ## Building the firmware
 
-The ESP-IDF is a **git submodule** (`firmware/esp-idf`, branch `lightmyink_v6.1`: v6.1 plus five local sleep/touch patches — do not assume it matches upstream). All commands run from `firmware/`.
+The ESP-IDF is a **git submodule** (`firmware/esp-idf`), pinned to the stock `v6.1` tag. The sleep tweaks the firmware needs are done from the firmware instead of patching IDF: `main/sleep_wrap.cpp` (ESP32 only, linked with `-Wl,--wrap`) stops IDF from measuring or changing the RTC slow clock calibration (only `Time::calSet()` sets it, IDF's writes are ignored after power-on) and uses the short RC_FAST wait on deep sleep. All library submodules point at their upstream repos, unmodified. All commands run from `firmware/`.
 
 ```bash
 git submodule update --init --recursive     # first checkout only
