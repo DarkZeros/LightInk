@@ -282,13 +282,8 @@ int melody[] = {
 
 };
 
-// delay() that ends early once cancelled
-static void delayOrCancel(int ms, const Cancel& cancel) {
-  constexpr int kSlice = 50;
-  for (; ms > 0 && !cancel; ms -= kSlice)
-    delay(std::min(ms, kSlice));
-}
-
+// Cancel is only checked between notes: each wake in the middle of a note glitches it
+// (light sleep exit and entry bend pitch and level for a few ms)
 void Peripherals::tetris(const Cancel& cancel) {
   Speaker speaker;
   int notes=sizeof(melody)/sizeof(melody[0])/2; 
@@ -312,9 +307,9 @@ void Peripherals::tetris(const Cancel& cancel) {
 
     // we only play the note for 90% of the duration, leaving 10% as a pause
     speaker.set(melody[thisNote]);
-    delayOrCancel(noteDuration * 0.9, cancel);
+    delay(noteDuration * 0.9);
 
     speaker.set(0);
-    delayOrCancel(noteDuration * 0.1, cancel);
+    delay(noteDuration * 0.1);
   }
 }

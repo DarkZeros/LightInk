@@ -33,8 +33,8 @@ public:
     // Popup for blocking work, drawn right away. The final message goes through
     // kSettings.mUi.popup() instead: the draw at the end of the wake shows it
     void progress(std::string_view msg);
-    // Shows msg while job runs in the background, BACK sets its Cancel. Returns with
-    // the popup removed once the job has ended
+    // Shows msg while job runs in the background, BACK sets its Cancel (seen the next
+    // time the job checks it). Returns with the popup removed once the job has ended
     void runCancellable(std::string_view msg, std::function<void(const Cancel&)> job);
     const UI::Any& findUi();
     UI::Any generateMenus();

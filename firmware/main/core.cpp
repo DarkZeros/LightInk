@@ -343,13 +343,12 @@ void Core::progress(std::string_view msg) {
 }
 
 void Core::runCancellable(std::string_view msg, std::function<void(const Cancel&)> job) {
-    Cancel cancel{false};
+    // No polling loop here: waking every 50 ms costs power and each light sleep exit
+    // and entry glitches a playing tone. The touch status latches, so the job's own
+    // reads of cancel find a BACK press made while it slept
+    Cancel cancel{[this]{ return (mTouch.poll() & Touch::BACK) != 0; }};
     auto task = std::async(std::launch::async, [&]{ job(cancel); });
     progress(msg);
-    while (task.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
-        if (mTouch.poll() & Touch::BACK)
-            cancel = true;
-    }
     task.get();
     kSettings.mUi.mPopup.reset();
 }
