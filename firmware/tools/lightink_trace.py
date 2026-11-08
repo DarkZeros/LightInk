@@ -632,6 +632,10 @@ class Timeline:
         self.snaps = [(-1, self.head.copy())]
         self.applied = 0
         self.open = None
+        # (cmd, its data so far) of the last command, whose data may still come in a
+        # later frame: the live viewer closes a command after 0.3 s without input, and
+        # frames from the other core can land between a command and its data
+        self.cont = None
         self.frames = []
         self.script_ended = False
         self.on_event = on_event or (lambda e: None)
@@ -654,6 +658,7 @@ class Timeline:
                 self._add("log", t, title="log", detail=item[1])
             elif item[0] == "bad":
                 self.close_open()
+                self.cont = None  # The lost frame may have moved the RAM counters
                 self._add("bad", t, title="corrupt", detail=item[1])
             else:
                 self._frame(item[1], item[2], t)
@@ -677,6 +682,7 @@ class Timeline:
         self.groups.append(len(self.events))
         self.wake_span.append([None, None, False])
         self.last_at = dt
+        self.cont = None
         self.head.hw_reset()
         # RTC: locks and rail survive the sleep, the rest starts over
         self.sys = SystemState(mask=self.sys.mask, rail=self.sys.rail, battery=self.sys.battery,
@@ -696,12 +702,22 @@ class Timeline:
         if typ == T_SPI and p and p[0]:
             if self.open:
                 self.open.data += p[1:]
+            elif self.cont is not None:
+                # Its own event, so replays from a later snapshot see it. A RAM write goes
+                # on at the counters where the closed part left them; register commands
+                # are set again with all their parameters so far
+                cmd, prev = self.cont
+                data = bytearray(p[1:]) if cmd in (0x24, 0x26) else prev + p[1:]
+                ev = self._add("cmd", t, cmd=cmd, title=f"{cmd_name(cmd)} (cont.)", data=data, closed=False)
+                self.cont = (cmd, data)
+                self.open = ev
             else:
                 self._close(self._add("cmd", t, cmd=None, data=bytearray(p[1:]), closed=False))
         elif typ in (T_SPI, T_SPI_CMD) and p:
             data = p if typ == T_SPI_CMD else p[1:]
             for i, c in enumerate(data):
                 ev = self._add("cmd", t, cmd=c, title=cmd_name(c), closed=False, dt=dt)
+                self.cont = (c, ev.data)
                 if i < len(data) - 1:
                     self._close(ev)
                 else:
