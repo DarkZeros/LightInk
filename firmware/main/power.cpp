@@ -84,24 +84,37 @@ void Power::hold(gpio_num_t pin, bool enable) {
 }
 
 void Power::lock(Flag f) {
-  // The mask and the pin change together, so once this returns the rail is high
-  Critical lock;
-  // ESP_LOGE("power", "lock -> %x + %x", kLock.load(), f);
-  // If the value returned is "0", this thread is responsible for locking
-  if (kLock.fetch_or(f, std::memory_order_acq_rel) == 0) {
-    high();
+  uint8_t mask;
+  bool rail;
+  {
+    // The mask and the pin change together, so once this returns the rail is high
+    Critical lock;
+    // ESP_LOGE("power", "lock -> %x + %x", kLock.load(), f);
+    // If the value returned is "0", this thread is responsible for locking
+    if (kLock.fetch_or(f, std::memory_order_acq_rel) == 0) {
+      high();
+    }
+    mask = kLock.load();
+    rail = kPrev;
   }
-  Trace::power(f, true, kLock.load(), kPrev);
+  // Outside Critical: the app trace takes the stdout lock, which aborts with interrupts off
+  Trace::power(f, true, mask, rail);
 }
 
 void Power::unlock(Flag f) {
-  Critical lock;
-  // ESP_LOGE("power", "unlock -> %x + %x", kLock.load(), f);
-  // If the value returned is the flag, this thread is responsible for releasing
-  if (kLock.fetch_and(~f, std::memory_order_acq_rel) == f) {
-    low();
+  uint8_t mask;
+  bool rail;
+  {
+    Critical lock;
+    // ESP_LOGE("power", "unlock -> %x + %x", kLock.load(), f);
+    // If the value returned is the flag, this thread is responsible for releasing
+    if (kLock.fetch_and(~f, std::memory_order_acq_rel) == f) {
+      low();
+    }
+    mask = kLock.load();
+    rail = kPrev;
   }
-  Trace::power(f, false, kLock.load(), kPrev);
+  Trace::power(f, false, mask, rail);
 }
 
 bool Power::current() {
