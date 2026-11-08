@@ -28,6 +28,7 @@ void Peripherals::vibrator(const std::vector<int>& pattern) {
 
 #include "driver/ledc.h"
 #include "soc/ledc_struct.h"
+#include "soc/rtc_cntl_reg.h"
 
 struct Speaker {
   constexpr static auto kTimer = LEDC_TIMER_0;
@@ -36,6 +37,23 @@ struct Speaker {
   constexpr static auto kClock = LEDC_USE_RC_FAST_CLK;
 
   Power::Lock powerLock = Power::Lock(Power::Flag::Speaker);
+
+  // RC_FAST stays powered in light sleep (CK8M_FORCE_PU), but the RTC state machine still
+  // gates it to the digital side for its 8M wait on every sleep transition. The LEDC then
+  // stalls for ~0.1 ms and the tone clicks (pitch -1.3%, level -21% through a filter, in
+  // a recording). IDF sets FORCE_NOGATING with FORCE_PU on C2/C3, not on ESP32/S3, and
+  // never writes the bit there, so it holds while set. Counted, sounds can overlap
+  struct NoClockGating {
+    static inline std::atomic<int> sUsers{0};
+    NoClockGating() {
+      if (sUsers.fetch_add(1) == 0)
+        SET_PERI_REG_MASK(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_NOGATING);
+    }
+    ~NoClockGating() {
+      if (sUsers.fetch_sub(1) == 1)
+        CLEAR_PERI_REG_MASK(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_NOGATING);
+    }
+  } noClockGating;
 
   // Select resolution based on the frequency values, not to overflow or underflow divisor
   static ledc_timer_bit_t calc_resolution(uint32_t freq) {
