@@ -83,7 +83,9 @@ void Touch::setUp(bool onlyMenuLight) {
   auto setTouchPad = [&](auto&& v, bool enabled) {
     auto pad = (touch_pad_t)HW::Touch::Pad[mSettings.mMap[v]];
 #if(HW_VERSION < 10)
-    uint16_t th = enabled ? mSettings.mSensitivity : 0;
+    // The count grows with the measure time, so the threshold scales with it. The
+    // sensitivity is for one cycle unit (_31ms). The rate does not change the count
+    uint16_t th = enabled ? mSettings.mSensitivity * mSettings.mCycles[onlyMenuLight] : 0;
     touch_pad_clear_group_mask((1 << pad), (1 << pad), (1 << pad));
     if (enabled)
        touch_pad_set_group_mask((1 << pad), (1 << pad), (1 << pad));
