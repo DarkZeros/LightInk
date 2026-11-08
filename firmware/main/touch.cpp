@@ -7,7 +7,9 @@
 #include "hal/touch_sensor_legacy_hal.h"
 #include "driver/touch_sensor.h"
 #include "esp_sleep.h"
+#include "esp_timer.h"
 
+#include <atomic>
 #include <optional>
 
 namespace {
@@ -22,6 +24,9 @@ namespace {
     bool operator==(const Applied&) const = default;
   };
   RTC_DATA_ATTR std::optional<Applied> mApplied {};
+
+  // Time between two timer measurements at a rate, _1s is one second
+  constexpr uint32_t intervalMs(MeasureRate rate) { return rate * 1000 / MeasureRate::_1s; }
 };
 
 Touch::Touch(TouchSettings& settings) : mSettings{settings} {
@@ -69,7 +74,7 @@ void Touch::setUp(bool onlyMenuLight) {
 
 #if(HW_VERSION < 10)
   touch_ll_set_meas_time(mSettings.mCycles[onlyMenuLight] * 1024);
-  touch_pad_set_measurement_interval((32 * 1024) / MeasureRate::_1s * rate);
+  touch_pad_set_measurement_interval(intervalMs(rate) * 32768 / 1000); // RTC slow cycles
 #else
   touch_ll_set_meas_times(mSettings.mCycles[onlyMenuLight] * 1024);
   touch_pad_set_measurement_interval((4 * 1024) / MeasureRate::_1s * rate); //???
@@ -94,6 +99,51 @@ void Touch::setUp(bool onlyMenuLight) {
   setTouchPad(HW::Touch::BotL, true);
 
   kDSState.lightPad = HW::Touch::Pad[mSettings.mMap[HW::Touch::BotL]];
+}
+
+namespace {
+  std::atomic<int> sManualUsers{0};
+  std::atomic<uint32_t> sLastMeasureMs{0};
+
+  uint32_t nowMs() { return esp_timer_get_time() / 1000; }
+  // Interval of the rate setUp() applied, measureNow() keeps to it. 0 before any setUp()
+  uint32_t appliedIntervalMs() { return mApplied ? intervalMs(mApplied->rate) : 0; }
+}
+
+Touch::Manual::Manual() {
+#if (HW_VERSION < 10)
+  // The driver call, not the LL one: on ESP32 it also stops the touch timer
+  // (touch_slp_timer_en). With only the mode switched the timer kept firing and each
+  // tick still stalled the tone
+  if (sManualUsers.fetch_add(1) == 0) {
+    touch_pad_set_fsm_mode(TOUCH_FSM_MODE_SW);
+    sLastMeasureMs = nowMs() - appliedIntervalMs(); // The first measureNow() measures
+  }
+#endif
+}
+
+Touch::Manual::~Manual() {
+#if (HW_VERSION < 10)
+  if (sManualUsers.fetch_sub(1) == 1)
+    touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER); // Restarts the timer too
+#endif
+}
+
+void Touch::measureNow() {
+#if (HW_VERSION < 10)
+  if (sManualUsers == 0)
+    return;
+  // Not more often than the timer would, short notes would pay ~0.6 ms each
+  const uint32_t now = nowMs();
+  if (now - sLastMeasureMs < appliedIntervalMs())
+    return;
+  sLastMeasureMs = now;
+  touch_ll_start_sw_meas();
+  // Done drops once the measurement starts and rises at its end, all pads take ~0.6 ms
+  const auto start = esp_timer_get_time();
+  while (touch_ll_is_measure_done() && esp_timer_get_time() - start < 100) {}
+  while (!touch_ll_is_measure_done() && esp_timer_get_time() - start < 5000) {}
+#endif
 }
 
 void Touch::enable() const {

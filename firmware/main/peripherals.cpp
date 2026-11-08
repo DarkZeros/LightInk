@@ -1,6 +1,7 @@
 #include "peripherals.h"
 #include "hardware.h"
 #include "power.h"
+#include "touch.h"
 #include "trace.h"
 
 #include "driver/gpio.h"
@@ -54,6 +55,10 @@ struct Speaker {
         CLEAR_PERI_REG_MASK(RTC_CNTL_CLK_CONF_REG, RTC_CNTL_CK8M_FORCE_NOGATING);
     }
   } noClockGating;
+
+  // On the PICO-D4 the touch FSM measurement stalls the tone too, so touch is
+  // measured in between notes, in the silence before each one starts (set())
+  Touch::Manual touchManual;
 
   // Select resolution based on the frequency values, not to overflow or underflow divisor
   static ledc_timer_bit_t calc_resolution(uint32_t freq) {
@@ -116,6 +121,7 @@ struct Speaker {
     uint32_t halfDuty = 1 << (dutyBit - 1);
 
     ledc_stop(kSpeedMode, kChannel, 0);  // Clear duty_start / sig_out_en first
+    Touch::measureNow();                 // While silent, see touchManual
 
     ledc_timer_config_t ledc_timer = {
       .speed_mode = kSpeedMode,

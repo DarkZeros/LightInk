@@ -81,6 +81,18 @@ public:
     void enable() const;
     void disable() const;
 
+    // While one is alive the pads are measured only by measureNow(), not by the touch
+    // FSM timer. On the PICO-D4 each FSM measurement stalls RC_FAST for up to ~0.1 ms,
+    // which clicks a playing tone. Counted, the last one restores the timer. ESP32 only
+    struct Manual {
+        Manual();
+        ~Manual();
+    };
+    // Measures all pads once (<1 ms, blocks) and updates the status poll() reads.
+    // Does nothing unless a Manual is alive, or if the last one was less than the
+    // measure rate (mRate) ago
+    static void measureNow();
+
 private:
     Btn toBtn(uint32_t mask) const;
 };
