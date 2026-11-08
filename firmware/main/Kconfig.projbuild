@@ -10,9 +10,17 @@ config LIGHTINK_TRACE
         Debug only: slows every wake and invalidates any power measurement. Keeps the
         power rail high while the app is awake (UART0 is unreliable on the low rail).
 
+config LIGHTINK_SCRIPT
+    bool "Replay scripted touches without the trace (power tests)"
+    default n
+    help
+        Replays the touch script without LIGHTINK_TRACE: nothing is written to
+        UART0 and the power rail is left alone, so the current can be measured.
+        Used by test.py for the power tests.
+
 config LIGHTINK_TRACE_SCRIPT
     string "Scripted touch sequence"
-    depends on LIGHTINK_TRACE
+    depends on LIGHTINK_TRACE || LIGHTINK_SCRIPT
     default ""
     help
         Buttons replayed one per wake after first boot, instead of real touches.
@@ -21,8 +29,48 @@ config LIGHTINK_TRACE_SCRIPT
 
 config LIGHTINK_TRACE_STEP_MS
     int "Delay between scripted steps (ms)"
-    depends on LIGHTINK_TRACE
+    depends on LIGHTINK_TRACE || LIGHTINK_SCRIPT
     default 1000
+
+config LIGHTINK_SCRIPT_FLASH
+    bool "Read the touch script from flash (test.py)"
+    depends on LIGHTINK_TRACE || LIGHTINK_SCRIPT
+    default n
+    help
+        After a cold boot, a script that test.py wrote at LIGHTINK_SCRIPT_FLASH_OFFSET
+        replaces LIGHTINK_TRACE_SCRIPT, so one image runs every test and only one
+        flash sector changes between them. Format: "LIS1", step ms (u16 LE),
+        length (u8), steps. Anything else there (an erased sector) keeps the
+        Kconfig script.
+
+config LIGHTINK_SCRIPT_FLASH_OFFSET
+    hex "Flash offset of the script sector"
+    depends on LIGHTINK_SCRIPT_FLASH
+    default 0x3FF000
+    help
+        A 4 KB sector outside every partition. The default is the last sector
+        of a 4 MB flash.
+
+endmenu
+
+menu "LightInk tests"
+
+config LIGHTINK_FAKE_SIGNALS
+    bool "Radio menu sends garbage signals"
+    default n
+    help
+        The Radio menu lists the meaningless bursts of test_signals.cpp instead of
+        the signals in secrets.cpp, so tests key the transmitter without opening
+        anything.
+
+config LIGHTINK_NO_STORAGE
+    bool "Settings and pairing stay out of flash"
+    default n
+    help
+        Nothing is read from or written to the settings in flash (storage.cpp):
+        every cold boot starts from the defaults with no phone paired, which is
+        what test.py's model expects, and what the watch has stored is still
+        there when the normal image is flashed again.
 
 endmenu
 

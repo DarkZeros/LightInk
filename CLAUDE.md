@@ -34,7 +34,13 @@ Other useful `idf.py` commands: `idf.py build`, `idf.py flash`, `idf.py monitor`
 
 ### Tests
 
-`firmware/pytest.py` is the stock ESP-IDF hello-world example harness (pytest-embedded) and is not wired to the LightInk app — there is no meaningful firmware test suite here yet.
+`firmware/test.py` runs on-device tests (`./test.py list`, `./test.py selftest` needs no hardware). It builds three images under `build/test/` (`trace`, `power`, `release`), flashes once per image, and per test writes only the touch script to a spare flash sector (`CONFIG_LIGHTINK_SCRIPT_FLASH`, 0x3FF000) before a cold boot.
+- **trace suite**: decodes the UART trace with `tools/lightink_trace.py` and checks each scripted step against a Python model of the menus (`build_menus()` mirrors `generateMenus()`: update it when the menus change), plus the effects (vibrator/speaker patterns, WiFi/NTP, radio bursts, power locks, light, LoRa listening, rail) and what stays powered at every sleep.
+- **power suite**: the same scripts with `CONFIG_LIGHTINK_SCRIPT` (no trace, no UART, rail untouched), measured with a Monsoon (`--monsoon hvpm`) while USB is cut through its passthrough. Limits in `LIMITS` are first estimates; `--save-baseline` records `tools/power_baseline.json`.
+- Test images use `CONFIG_LIGHTINK_FAKE_SIGNALS`: the Radio menu sends garbage bursts (`main/test_signals.cpp`), never the codes in `secrets.cpp`.
+- All three images use `CONFIG_LIGHTINK_NO_STORAGE`: `Storage::` reads nothing and writes nothing, so every cold boot starts from the default settings with no phone paired (what the model expects), and the settings and pairing stored on the watch are still there when the normal image is flashed again. Tests of the flash copy itself would need an image without it.
+
+`firmware/pytest.py` is the stock ESP-IDF hello-world example harness (pytest-embedded), not wired to the LightInk app.
 
 ## Firmware architecture
 

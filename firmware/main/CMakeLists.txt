@@ -47,6 +47,7 @@ set(srcs
     display_test.cpp
 
     secrets.cpp
+    test_signals.cpp
 
     ble.cpp
     settings_table.cpp

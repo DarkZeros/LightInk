@@ -3,6 +3,7 @@
 
 #include "radio.h"
 #include "power.h"
+#include "trace.h"
 
 namespace {
   RTC_DATA_ATTR std::optional<SPISettings> kSpi;
@@ -32,6 +33,7 @@ OOK::~OOK() {
 
 void Signal::BasicOOK::send() const {
   // auto ook = OOK(mBitMicros, mFrequency, -9, 22); // Custom power transmission
+  Trace::radio(mFrequency, mBitMicros, mRepetitions, mSequence.size() * 8);
   auto ook = OOK(mBitMicros, mFrequency);
   for(auto i=0; i<mRepetitions; i++) {
     ook.transmit(mSequence);
@@ -40,6 +42,7 @@ void Signal::BasicOOK::send() const {
 }
 void Signal::FixedWidthPWM::send() const {
   // auto ook = OOK(mBitMicros, mFrequency, -9, 22); // Custom power transmission
+  Trace::radio(mFrequency, mBitMicros, mRepetitions, mSequence.mSize * mPattern1.mSize);
   auto ook = OOK(mBitMicros, mFrequency);
   for(auto i=0; i<mRepetitions; i++) {
     ook.transmit(mSequence, mPattern0, mPattern1);

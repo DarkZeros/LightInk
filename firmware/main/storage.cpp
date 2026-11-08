@@ -13,6 +13,13 @@ constexpr const char* kNamespace = "lightink";
 constexpr const char* TAG = "storage";
 // Debug: every call with its result and the NVS entry counts
 constexpr bool kLog = false;
+// Test images (test.py): nothing stored is read or changed. init() stays, the radios
+// keep their calibration data there
+#if CONFIG_LIGHTINK_NO_STORAGE
+constexpr bool kOff = true;
+#else
+constexpr bool kOff = false;
+#endif
 
 void stats(const char* when) {
     nvs_stats_t st;
@@ -67,6 +74,8 @@ bool init() {
 }
 
 std::vector<uint8_t> read(const char* key) {
+    if constexpr (kOff)
+        return {};
     if constexpr (kLog)
         stats("read");
     Handle h(NVS_READONLY);
@@ -80,6 +89,8 @@ std::vector<uint8_t> read(const char* key) {
 }
 
 bool write(const char* key, std::span<const uint8_t> data) {
+    if constexpr (kOff)
+        return false;
     if constexpr (kLog)
         stats("before write");
     HighRail rail;
@@ -89,6 +100,8 @@ bool write(const char* key, std::span<const uint8_t> data) {
 }
 
 void erase(const char* key) {
+    if constexpr (kOff)
+        return;
     HighRail rail;
     Handle h(NVS_READWRITE);
     if (h.mOpen && nvs_erase_key(h.mHandle, key) == ESP_OK)

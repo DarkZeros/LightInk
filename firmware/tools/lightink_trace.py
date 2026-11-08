@@ -727,7 +727,8 @@ class Timeline:
             script = {1: f"scripted {button_name(p[2])}", 2: "scripted idle"}.get(p[1], "")
             step = f" (step {p[3]}/{p[4]})" if p[1] else ""
             self._new_wake(dt)
-            self._add("wake", t, title=f"BOOT {cause}", detail=f"{script}{step}".strip(), dt=dt)
+            self._add("wake", t, title=f"BOOT {cause}", detail=f"{script}{step}".strip(), dt=dt,
+                      info={"cause": cause, "scripted": p[1], "btn": p[2], "step": p[3], "steps": p[4]})
             self._sys_changed()
         elif typ == T_STUB and len(p) >= 4:
             self._new_wake(dt)
@@ -756,6 +757,12 @@ class Timeline:
                 detail = " / ".join(f"{'on' if i % 2 == 0 else 'off'} {v}" for i, v in enumerate(vals))
                 self._add("periph", t, title="VIBRATE", detail=f"{detail} ms  ({sum(vals)} ms)", dt=dt,
                           info={"kind": "vibrator", "pattern": vals})
+            elif kind == 3 and len(vals) >= 4:
+                mhz, bit_us, reps, bits = vals[0] / 100, vals[1], vals[2], vals[3]
+                self._add("periph", t, title="RADIO TX",
+                          detail=f"OOK {mhz:.2f} MHz, {bits} bits x {bit_us} us, {reps}x"
+                                 f"  ({bits * bit_us * reps / 1000:.1f} ms on air)", dt=dt,
+                          info={"kind": "radio", "mhz": mhz, "bit_us": bit_us, "reps": reps, "bits": bits})
             else:
                 self.sys.speaker = (dt, [v for i, v in enumerate(vals) if i % 2])
                 notes = ", ".join(f"{f} Hz {d} ms" if f else f"rest {d} ms" for f, d in zip(vals[::2], vals[1::2]))
@@ -778,6 +785,15 @@ class Timeline:
         ui = "watchface" if depth < 0 else f"menu depth {depth}"
         detail = f"{ui}, {what}"
         warnings = []
+        info = {"pending": bool(p[0]), "stub": bool(p[1]), "depth": depth}
+        if len(p) >= 11:
+            info["listening"] = bool(p[10])
+            if p[10]:
+                detail += ", LoRa listening"
+        if len(p) >= 15:
+            info["state"] = list(p[11:15])
+            if depth >= 0:
+                detail += f" {list(p[11:11 + depth + 1])}"
         if len(p) >= 9:
             mask, rail, wifi, bt = p[3], p[4], p[5], p[6]
             s = self.sys
@@ -794,12 +810,14 @@ class Timeline:
             if len(p) >= 10 and p[9]:
                 warnings.append(f"trace UART stalled {p[9]}x since power-on (recovered)")
             s.warnings = tuple(warnings)
+            info.update(mask=mask, rail=bool(rail), wifi=wifi, bt=bt, battery=s.battery)
             detail += f"  ·  awake {ms(dt)}  ·  battery {s.battery} mV"
             if warnings:
                 detail += "  ·  ⚠ " + "; ".join(warnings)
         if dt is not None and self.groups:
             self.wake_span[-1][2] = True
-        self._add("sleep", t, title="SLEEP", detail=detail, dt=dt, info={"warnings": warnings})
+        info["warnings"] = warnings
+        self._add("sleep", t, title="SLEEP", detail=detail, dt=dt, info=info)
         self._sys_changed()
 
     def _wifi(self, t, dt, event, d):
@@ -1048,9 +1066,22 @@ class SerialSource:
         self.q = queue.Queue()
         self.links = queue.Queue()
         self.ser = None
+        self.closed = False
         if not self._open(reset):
             self.links.put(f"waiting for {port}")
-        threading.Thread(target=self._run, daemon=True).start()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def close(self):
+        """Stop reading and release the port, e.g. for esptool."""
+        self.closed = True
+        self.thread.join(timeout=2)
+        if self.ser:
+            self.ser.close()
+            self.ser = None
+        if self.rec:
+            self.rec.close()
+            self.rec = None
 
     def _ident_of(self, port):
         for p in self.list_ports.comports():
@@ -1085,7 +1116,7 @@ class SerialSource:
         return False
 
     def _run(self):
-        while True:
+        while not self.closed:
             if self.ser is None:
                 if self._open():
                     self.links.put(f"connected to {self.port}")

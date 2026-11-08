@@ -40,7 +40,7 @@ std::vector<UI::Any> buildAlarms(Core& core) {
 
 std::vector<UI::Any> buildRadios() {
   std::vector<UI::Any> radios;
-  for (auto& group : kSignals) {
+  for (auto& group : kMenuSignals) {
     UI::Menu menu{group.mName, {}};
     for (auto& [name, seq] : group.mSequences) {
       menu.items.emplace_back(UI::Action{name, [&]{ Radio::sendSignal(seq); }});

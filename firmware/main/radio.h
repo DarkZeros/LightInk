@@ -66,6 +66,14 @@ namespace Signal {
 }
 // constinit in secrets.cpp: lives in flash, no construction at boot
 extern const std::span<const Signal::Group> kSignals;
+// Garbage bursts for tests (test_signals.cpp), the Radio menu lists them instead of
+// kSignals with CONFIG_LIGHTINK_FAKE_SIGNALS
+extern const std::span<const Signal::Group> kTestSignals;
+#if CONFIG_LIGHTINK_FAKE_SIGNALS
+inline const auto& kMenuSignals = kTestSignals;
+#else
+inline const auto& kMenuSignals = kSignals;
+#endif
 
 /* Helper class to use the Radio HW module 
  */
