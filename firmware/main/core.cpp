@@ -13,6 +13,7 @@
 #include "settings.h"
 #include "trace.h"
 #include "settings_table.h"
+#include "status_icons.h"
 
 #include "watchface_default.h"
 #include "watchface_eclipse.h"
@@ -34,6 +35,31 @@ static esp_sleep_wakeup_cause_t wakeupCause() {
 }
 
 auto wakeup_reason = Trace::wakeCause(wakeupCause());
+
+// The watchface overlay (status icons, popup) is drawn on top into the buffer. Its
+// areas are no-touch zones for whatever writes the display RAM without the buffer:
+// the minute digits, written from the cache by the watchface and the wake stub
+static bool digitsClearOfOverlay() {
+    const auto& cache = kSettings.mWatchface.mCache;
+    auto clear = [&](const Rect& zone) {
+        return !zone.intersects(cache.mUnits.coord) && !zone.intersects(cache.mDecimal.coord);
+    };
+    const auto& ui = kSettings.mUi;
+    return (!ui.mIcons || clear(StatusIcons::kArea))
+        && (!ui.mPopup || clear(UI::popupRect(ui.mPopup->data())));
+}
+
+// Identifies the overlay the watchface was drawn with: a change needs a full frame
+static uint32_t overlayKey() {
+    const auto& ui = kSettings.mUi;
+    uint32_t key = 2166136261u ^ ui.mIcons; // FNV-1a
+    if (ui.mPopup) {
+        for (const char* c = ui.mPopup->data(); *c; c++)
+            key = (key ^ static_cast<uint8_t>(*c)) * 16777619u;
+        key = (key ^ 0xFF) * 16777619u; // No popup and an empty one differ
+    }
+    return key;
+}
 
 Core::Core()
 : mTime{kSettings.mTime}
@@ -252,8 +278,9 @@ Core::Core()
 
     // We can only run wakeupstub when on watchface mode
     if (kSettings.mUi.mDepth < 0) {
-        // The stub would draw the minutes over a popup: full boots until it's dismissed
-        const bool stub = !kSettings.mUi.mPopup;
+        // The stub writes the minutes from the cache: if the overlay covers them, full
+        // boots until it changes
+        const bool stub = digitsClearOfOverlay();
         kDSState.currentMinutes = mNow.Minute + firstMinutesSleep;
         kDSState.minutes = nextFullWake - mNow.Minute - firstMinutesSleep;
         // ESP_LOGE("", "min %d step %d wait %ld", kDSState.minutes, stepSize, kDSState.updateWait);
@@ -310,14 +337,24 @@ void Core::draw() {
     // Show watch face or menu ?
     const bool watchface = kSettings.mUi.mDepth < 0;
     auto& last = kSettings.mWatchface.mLastDraw;
-    // A popup needs a full frame, and so does the frame after it to remove it
-    if (kSettings.mUi.mPopup)
+    // The watchface needs a full frame when the overlay changed (e.g. a popup came or
+    // went), or when it covers the minutes. Otherwise partial updates draw it again
+    const auto overlay = overlayKey();
+    if (last.mOverlay != overlay || !digitsClearOfOverlay())
         last.mValid = false;
     const bool full = !watchface || !last.mValid;
     // A full frame draws everything again, but the buffer may hold an earlier frame of
     // this wake (progress()): the watchface digits have no background and would pile up
     if (full)
         mDisplay.fillScreen(0);
+
+    auto drawOverlay = [&] {
+        auto& ui = kSettings.mUi;
+        if (watchface && ui.mIcons)
+            UI::renderIcons(mDisplay, ui.mIcons);
+        if (ui.mPopup)
+            UI::renderPopup(mDisplay, ui.mPopup->data());
+    };
 
     if (watchface) {
         mDisplay.setRefreshMode(kSettings.mDisplay.mWatchLut);
@@ -326,12 +363,13 @@ void Core::draw() {
         // the buffer, a partial update it writes and refreshes by itself: it depends on
         // what it left in the display RAM
         switch(kSettings.mWatchface.mType) {
-            case 0: default: DefaultWatchface(ARGS).draw(); break;
-            case 1: EclipseWatchface(ARGS).draw(); break;
+            case 0: default: DefaultWatchface(ARGS).draw(drawOverlay); break;
+            case 1: EclipseWatchface(ARGS).draw(drawOverlay); break;
             // case 2: break;
             // case 3: break;
         }
         #undef ARGS
+        last.mOverlay = overlay;
         Light::off(); // Always turn off light exiting the Menus
     } else {
         mDisplay.setRefreshMode(kSettings.mDisplay.mMenuLut);
@@ -346,20 +384,17 @@ void Core::draw() {
                 mDisplay.println("PRESS BACK");
             }
         }, findUi());
+        drawOverlay();
+        last.mValid = false; // The watchface redraws everything after the menus
     }
 
     if (full) {
-        if (auto& popup = kSettings.mUi.mPopup)
-            UI::renderPopup(mDisplay, popup->data());
         mDisplay.writeAllAndRefresh();
         // The watchface's next partial needs this frame in the front buffer too: after a
         // partial it holds the frame before. A full refresh doesn't swap (T80)
         if (watchface && !mDisplay.lastRefreshFull())
             mDisplay.writeAll();
     }
-    // The watchface redraws everything after the menus or a popup
-    if (!watchface || kSettings.mUi.mPopup)
-        last.mValid = false;
 
     mDisplay.hibernate();
 }

@@ -21,11 +21,14 @@ struct UiSettings {
     int8_t mDepth {-1};
 
     // Message box drawn on top of the menus or the watchface by Core::draw(), until a
-    // button removes it (or the watchdog, when it leaves the menus). While it is up on
-    // the watchface the wake stub is off: every update is a full boot that draws it.
-    // Lives in RTC memory (kSettings), so it must be a fixed size buffer, not a
-    // std::string. Lines are split by '\n', 14 characters fit in each.
+    // button removes it (or the watchdog, when it leaves the menus). On the watchface
+    // it is part of the overlay, see Core::draw(). Lives in RTC memory (kSettings), so
+    // it must be a fixed size buffer, not a std::string. Lines are split by '\n', 14
+    // characters fit in each.
     std::optional<std::array<char, 64>> mPopup;
+
+    // Status icons shown on the watchface, a bit per StatusIcons::Id. None is set yet
+    uint8_t mIcons {0};
 
     void popup(std::string_view msg) {
         auto& buf = mPopup.emplace();
@@ -72,6 +75,8 @@ namespace UI {
 
 void renderHeader(Display& mDisplay, const std::string& name, size_t size = 2);
 void renderPopup(Display& mDisplay, const char* msg);
+Rect popupRect(const char* msg); // The box renderPopup() covers
+void renderIcons(Display& mDisplay, uint8_t icons); // Clears StatusIcons::kArea, then draws
 
 struct Name {
     std::string baseName;

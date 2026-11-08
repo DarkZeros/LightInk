@@ -40,7 +40,7 @@ void Watchface::updateCache() {
   cache.mType = watch.mType;
 }
 
-void Watchface::draw() {
+void Watchface::draw(const std::function<void()>& overlay) {
   // The faces set their fonts but assume size 1, and an earlier frame of this wake
   // (a progress() popup) may have left another size: custom fonts scale with it too
   mDisplay.setTextSize(1);
@@ -104,17 +104,22 @@ void Watchface::draw() {
     mDisplay.alignRect(c);
   }
 
-  // Full frame: only into the buffer, Core::draw() writes and refreshes it (with a
-  // popup on top) and leaves it in both RAM buffers
+  // Full frame: only into the buffer, Core::draw() writes and refreshes it and leaves
+  // it in both RAM buffers
   if (!last.mValid){
     copyMinutes2Buffer();
+    overlay();
     last.mValid = true;
     last.mMinuteD = mNow.Minute / 10;
     last.mMinuteU[0] = last.mMinuteU[1] = mNow.Minute % 10; // Both buffers are set
     return;
   }
 
-  // Partial update, written and refreshed here
+  // Partial update, written and refreshed here. The overlay is already in the display
+  // RAM, it only has to win where a rect crosses it. The minutes are written from the
+  // cache: Core::draw() makes a full frame if the overlay covers them
+  overlay();
+
   // Pass 1: Copy all to display
   for (const auto& c : composables)      
     mDisplay.writeAlignedRect(c);

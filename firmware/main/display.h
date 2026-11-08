@@ -42,6 +42,9 @@ extern void countRefresh(bool full); // After every 0x20 that refreshes, also in
 struct Rect {
   uint8_t x, y, w, h;
   uint16_t size() const {return static_cast<uint16_t>(w)/8 * h; };
+  bool intersects(const Rect& o) const {
+    return w && h && o.w && o.h && x < o.x + o.w && o.x < x + w && y < o.y + o.h && o.y < y + h;
+  }
 };
 
 class Display : public Adafruit_GFX {

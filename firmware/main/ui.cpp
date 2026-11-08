@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "settings.h"
 #include "display.h"
+#include "status_icons.h"
 
 #include "esp_log.h"
 
@@ -30,22 +31,39 @@ void renderHeader(Display& mDisplay, const std::string& name, size_t size) {
     mDisplay.setCursor(mDisplay.getCursorX(), mDisplay.getCursorY() + 5);
 }
 
+namespace {
+    constexpr int kPopupLineH = 16, kPopupPad = 8, kPopupMargin = 10;
+
+    std::vector<std::string_view> popupLines(const char* msg) {
+        std::vector<std::string_view> lines;
+        for (std::string_view rest{msg}; !rest.empty();) {
+            auto end = rest.find('\n');
+            lines.push_back(rest.substr(0, end));
+            rest = end == rest.npos ? std::string_view{} : rest.substr(end + 1);
+        }
+        return lines;
+    }
+    Rect popupBox(size_t lines) {
+        const int h = lines * kPopupLineH + 2 * kPopupPad;
+        return {kPopupMargin, static_cast<uint8_t>((Display::HEIGHT - h) / 2),
+                Display::WIDTH - 2 * kPopupMargin, static_cast<uint8_t>(h)};
+    }
+}
+
+Rect popupRect(const char* msg) {
+    return popupBox(popupLines(msg).size());
+}
+
 void renderPopup(Display& mDisplay, const char* msg) {
     // Split in lines ('\n'), each one centered inside a framed box
-    std::vector<std::string_view> lines;
-    for (std::string_view rest{msg}; !rest.empty();) {
-        auto end = rest.find('\n');
-        lines.push_back(rest.substr(0, end));
-        rest = end == rest.npos ? std::string_view{} : rest.substr(end + 1);
-    }
+    const auto lines = popupLines(msg);
 
     mDisplay.setFont(nullptr); // The watchface leaves its own font set
     mDisplay.setTextSize(2);
     mDisplay.setTextWrap(false);
-    constexpr int kLineH = 16, kPad = 8, kMargin = 10;
-    const int boxW = mDisplay.WIDTH - 2 * kMargin;
-    const int boxH = lines.size() * kLineH + 2 * kPad;
-    const int boxY = (mDisplay.HEIGHT - boxH) / 2;
+    const auto box = popupBox(lines.size());
+    const int kMargin = box.x, kPad = kPopupPad, kLineH = kPopupLineH;
+    const int boxW = box.w, boxH = box.h, boxY = box.y;
 
     mDisplay.fillRect(kMargin, boxY, boxW, boxH, 0);
     mDisplay.drawRect(kMargin, boxY, boxW, boxH, 1);
@@ -59,6 +77,16 @@ void renderPopup(Display& mDisplay, const char* msg) {
         mDisplay.print(line.c_str());
     }
     mDisplay.setTextWrap(true);
+}
+
+void renderIcons(Display& mDisplay, uint8_t icons) {
+    const auto& a = StatusIcons::kArea;
+    mDisplay.fillRect(a.x, a.y, a.w, a.h, 0);
+    for (uint8_t i = 0; i < StatusIcons::COUNT; i++) {
+        if (icons & (1 << i))
+            mDisplay.drawBitmap(a.x + i * StatusIcons::kSize, a.y, StatusIcons::kBitmaps[i].data(),
+                                StatusIcons::kSize, StatusIcons::kSize, 1);
+    }
 }
 
 namespace {

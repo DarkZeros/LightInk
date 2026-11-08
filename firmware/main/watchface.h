@@ -33,6 +33,7 @@ struct WatchfaceSettings {
     // if the draw was valid or not, there is 128 bytes for extra data for the watchfaces
     struct {
         bool mValid{false}; // If the last draw was a watchface
+        uint32_t mOverlay{}; // Icons and popup it was drawn with, see Core::draw()
         uint8_t mMinuteU[2]{}, mMinuteD{}; // Front and back buffers for Units
         uint8_t mStore[128]{}; // Scratch data the Watchfaces want to store
     } mLastDraw;
@@ -85,6 +86,7 @@ public:
     , mDisplay(display)
     {}
 
-    void draw();
+    // overlay draws on top into the buffer (icons, popup), before anything is written
+    void draw(const std::function<void()>& overlay);
     void updateCache();
 };
