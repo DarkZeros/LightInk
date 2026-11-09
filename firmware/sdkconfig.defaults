@@ -33,7 +33,10 @@ CONFIG_FREERTOS_IN_IRAM=y
 
 # Bluetooth (main/ble.cpp): the watch is a BLE central with one link, to the phone.
 # The phone's key is kept by the app code, NimBLE's own store stays in RAM.
-CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+# The peripheral role stays only for the GATT server: Android reads the watch's name
+# and appearance from its GAP service after pairing, or shows the MAC.
+CONFIG_BT_NIMBLE_SVC_GAP_DEVICE_NAME="LightInk"
+CONFIG_BT_NIMBLE_SVC_GAP_APPEARANCE=0xC0
 CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
 CONFIG_BT_NIMBLE_MAX_BONDS=1

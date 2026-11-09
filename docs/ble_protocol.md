@@ -64,9 +64,31 @@ from any other phone running the app; the link key is what secures the exchange.
 
 *Bluetooth › Pair phone* on the watch scans for an advertisement with `PAIRING`,
 connects and starts LE Secure Connections pairing. The watch is `DisplayOnly`, so it
-shows a 6 digit passkey and Android asks for it (dialog, or a notification). After
+shows a 6 digit passkey. While the app is pairing it catches Android's
+`ACTION_PAIRING_REQUEST` for the device connected to its GATT server (priority 999,
+ahead of the system dialog), stops the broadcast and asks for the code on a number pad,
+then answers with `setPin()`; Android turns the digits into the LE passkey. A phone that
+doesn't let the broadcast be stopped shows its own dialog as well, either works. After
 bonding the watch writes `SCHEMA` and `STATE` with the `JUST_PAIRED` flag and a new
 token, which the app adopts.
+
+Android refuses to pair again with a device it still has a bond with. Before pairing,
+and on *Forget watch*, the app removes the phone's bond with the watch (and with any
+watch seen during a pairing that failed halfway) through the hidden
+`BluetoothDevice.removeBond()`; where a phone refuses that, Forget opens Bluetooth
+settings instead.
+
+The watch has no advertising, but it serves a GAP service (`ble_svc_gap`, name
+`LightInk`, appearance 0x00C0 watch) so Android shows its name instead of its MAC. That
+needs NimBLE's peripheral role for the GATT server (+12 KB flash). During a session the
+watch rejects Android's connection parameter update requests (`BLE_ERR_CONN_PARMS`):
+Android asks for 45 ms right after connecting, which made the exchange about 6 times
+longer on air.
+
+The app's foreground notification is there only while pairing, while changes wait for
+the watch, or with *Always reachable* on. Otherwise the service runs without it while
+the app is open and Android stops it some time after: the watch then finds no phone
+until the app is opened again, which costs the watch only its usual listening window.
 
 Android advertises from a resolvable private address that rotates, and the ESP32
 controller has no LL privacy, so NimBLE could not match a later connection to its bond.
@@ -232,6 +254,17 @@ The pairing key is a separate NVS key (`ble_peer`), written only when pairing.
   create and update read back 109 B, and an update survived a reset with the same hash.
   `Storage` now holds `Power::Flag::Flash` for every NVS call that may write. Pairings
   made before this fix have to be made again, once.
+- **After the flash fix, a pairing survives flashing.** Flashed twice after pairing: the
+  watch reconnected and encrypted with its stored key both times, no pairing again.
+- **Android reads the name** from the GAP service: "RNR received expected name ...
+  HCI_SUCCESS" right after the first connection (it timed out without the service).
+- **Connection parameter request rejected**: Android's update came back with status 59
+  (0x3B) and the link stayed at 15 ms; the next exchange (read, 4 schema pieces, state)
+  took ~150 ms of GATT. With 45 ms accepted, requests had been ~90 ms apart.
+- **Notification**: up while 2 changes waited, gone after the sync that delivered them,
+  then Android stopped the background service.
+- Not tried on the device yet: the number pad code entry and removeBond() (both need a
+  new pairing).
 - **Open: the stack start.** 292 ms to bring NimBLE and the controller up is longer than
   the ~200 ms refresh window, and a background sync gives up when the refresh ends. If
   later sessions show the same, an automatic sync can never find the phone: start the

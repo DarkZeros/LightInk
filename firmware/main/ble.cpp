@@ -19,6 +19,7 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "services/gap/ble_svc_gap.h"
 
 #include "peripherals.h"
 #include "power.h"
@@ -210,6 +211,9 @@ private:
         ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_store_config_init(); // RAM only: the key that matters is saved in BlePeer
+        // Name ("LightInk") and appearance (watch) for Android, which reads them after
+        // pairing and shows the MAC without them
+        ble_svc_gap_init();
 
         nimble_port_freertos_init([](void*) {
             nimble_port_run(); // Until nimble_port_stop()
@@ -265,6 +269,11 @@ private:
                     s.mShowCode(io.passkey);
             }
             break;
+        case BLE_GAP_EVENT_CONN_UPDATE_REQ:
+        case BLE_GAP_EVENT_L2CAP_UPDATE_REQ:
+            // Android asks for 45 ms soon after connecting: the exchange then took 6x
+            // longer on air. The session is short, keep the 7.5-15 ms it was opened with
+            return BLE_ERR_CONN_PARMS;
         case BLE_GAP_EVENT_REPEAT_PAIRING: {
             // Only reached when pairing again within a session: drop the old keys
             ble_gap_conn_desc desc;
