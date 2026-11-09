@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 108dp adaptive icon layer, the watch kept inside the 66dp safe zone -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF1F1F1F"
+        android:fillType="evenOdd"
+        android:pathData="M44,26h20v10H44z M44,72h20v10H44z M41,34h26a6,6 0 0 1 6,6v28a6,6 0 0 1 -6,6H41a6,6 0 0 1 -6,-6V40a6,6 0 0 1 6,-6z M41,40v28h26V40z" />
+    <!-- Digits on the screen: "12" as two bars -->
+    <path
+        android:fillColor="#FF1F1F1F"
+        android:pathData="M46,47h4v14h-4z M54,47h8v3h-5v3h5v8h-8v-3h5v-3h-5z" />
+</vector>
