@@ -30,6 +30,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,8 +43,11 @@ import java.util.UUID
 /**
  * Keeps the phone reachable for the watch: advertises the LightInk payload and serves
  * the GATT service. The watch decides when to talk (a short window while its display
- * refreshes), so this has to be up whenever a watch is paired. It's a foreground
- * service so Android doesn't stop it in the background.
+ * refreshes).
+ *
+ * It's a foreground service, with its notification, only while something needs the
+ * watch: pairing, changes waiting, or "Always reachable". Otherwise it runs without a
+ * notification while the app is open, and Android stops it some time after.
  */
 @SuppressLint("MissingPermission") // Started only once the permissions are granted
 class SyncService : Service() {
@@ -58,6 +62,9 @@ class SyncService : Service() {
     private val assemblers = HashMap<Pair<String, UUID>, Protocol.Assembler>()
     // A long read must see the same value for every offset
     private var pendingServed: ByteArray? = null
+    // The watch connected to the GATT server, to recognise its pairing request
+    @Volatile private var connectedAddress: String? = null
+    private var foreground = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -65,26 +72,40 @@ class SyncService : Service() {
         super.onCreate()
         WatchStore.init(this)
         manager = getSystemService(BluetoothManager::class.java)
-        startInForeground()
+        updateForeground(notice(WatchStore.state.value))
         ContextCompat.registerReceiver(
             this, bluetoothState, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        // Before the system's pairing dialog (priority 0): the app asks for the code
+        val pairing = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            priority = 999
+        }
+        ContextCompat.registerReceiver(this, pairingRequests, pairing, ContextCompat.RECEIVER_EXPORTED)
         scope.launch {
             WatchStore.state
                 .map { Triple(it.needsService, it.advertisementFlags() to it.token, it.fastAdvertising) }
                 .distinctUntilChanged()
                 .collect { (needed, _, _) -> if (needed) refresh() else stopSelf() }
         }
+        scope.launch {
+            WatchStore.state.map { notice(it) }.distinctUntilChanged().collect { updateForeground(it) }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         refresh()
-        return START_STICKY
+        // Restarted by the system only while it has something to deliver
+        return if (notice(WatchStore.state.value) != null) START_STICKY else START_NOT_STICKY
     }
 
     override fun onDestroy() {
         unregisterReceiver(bluetoothState)
+        unregisterReceiver(pairingRequests)
+        PairingCode.device = null
+        WatchStore.setCodeRequested(false)
         stopBluetooth()
         WatchStore.setConnected(false)
         scope.cancel()
@@ -98,6 +119,39 @@ class SyncService : Service() {
                 BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> {
                     stopBluetooth()
                     WatchStore.setBluetoothProblem("Bluetooth is off")
+                }
+            }
+        }
+    }
+
+    /**
+     * Android's pairing request for the watch being paired: the system dialog is stopped
+     * and the app asks for the code with a number pad, then answers with setPin(). Any
+     * other request, or a phone that doesn't let the broadcast be stopped, gets the
+     * system dialog as before.
+     */
+    private val pairingRequests = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val device = IntentCompat.getParcelableExtra(
+                intent, BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java,
+            ) ?: return
+            when (intent.action) {
+                BluetoothDevice.ACTION_PAIRING_REQUEST -> {
+                    val variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1)
+                    // The watch's passkey arrives as the PIN variant, which setPin() answers
+                    if (!WatchStore.state.value.pairing || device.address != connectedAddress ||
+                        variant != BluetoothDevice.PAIRING_VARIANT_PIN
+                    ) return
+                    if (isOrderedBroadcast) abortBroadcast()
+                    PairingCode.device = device
+                    WatchStore.setCodeRequested(true)
+                }
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                    val bond = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
+                    if (device.address == PairingCode.device?.address && bond != BluetoothDevice.BOND_BONDING) {
+                        PairingCode.device = null
+                        WatchStore.setCodeRequested(false)
+                    }
                 }
             }
         }
@@ -211,6 +265,9 @@ class SyncService : Service() {
         @Synchronized
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             val connected = newState == BluetoothProfile.STATE_CONNECTED
+            connectedAddress = if (connected) device.address else null
+            // A pairing that fails halfway leaves a bond: remember whose, to drop it
+            if (connected && WatchStore.state.value.pairing) WatchStore.setPairingAddress(device.address)
             if (!connected) {
                 assemblers.keys.removeAll { it.first == device.address }
                 pendingServed = null
@@ -279,11 +336,26 @@ class SyncService : Service() {
 
     // --- Foreground notification -------------------------------------------------------
 
-    private fun startInForeground() {
+    /** Title and text of the notification, or null when nothing needs it. */
+    private fun notice(s: WatchState): Pair<String, String>? = when {
+        s.pairing && s.codeRequested -> "Pairing with the watch" to "Type the code shown on the watch"
+        s.pairing -> "Pairing with the watch" to "Waiting for the watch"
+        s.pending.isNotEmpty() ->
+            "${s.pending.size} change(s) waiting for the watch" to "They apply at its next sync"
+        s.alwaysReachable && s.paired -> "LightInk" to "The watch can sync any time"
+        else -> null
+    }
+
+    private fun updateForeground(notice: Pair<String, String>?) {
+        if (notice == null) {
+            if (foreground) ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            foreground = false
+            return
+        }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, "Watch link", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Keeps the phone reachable for the LightInk watch"
+                description = "Shown while changes wait for the LightInk watch"
                 setShowBadge(false)
             }
         )
@@ -292,15 +364,17 @@ class SyncService : Service() {
         )
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_watch)
-            .setContentTitle("LightInk")
-            .setContentText("Waiting for the watch to sync")
+            .setContentTitle(notice.first)
+            .setContentText(notice.second)
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
         ServiceCompat.startForeground(
             this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
+        foreground = true
     }
 
     companion object {
@@ -308,8 +382,11 @@ class SyncService : Service() {
         private const val CHANNEL = "link"
         private const val NOTIFICATION_ID = 1
 
-        fun start(context: Context) {
-            ContextCompat.startForegroundService(context, Intent(context, SyncService::class.java))
+        /** Foreground start (from the background, e.g. boot) only when it will notify. */
+        fun start(context: Context, foreground: Boolean = false) {
+            val intent = Intent(context, SyncService::class.java)
+            if (foreground) ContextCompat.startForegroundService(context, intent)
+            else context.startService(intent)
         }
     }
 }

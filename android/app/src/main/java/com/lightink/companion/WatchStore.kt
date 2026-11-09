@@ -23,8 +23,11 @@ data class WatchState(
     val batteryMv: Int = 0,
     val batteryPermille: Int = 0,
     val fastAdvertising: Boolean = true,
+    val alwaysReachable: Boolean = false, // Keep the notification and the link up all the time
+    val pairingAddress: String? = null, // Watch seen while pairing, its bond may be left over
     // Not saved
     val pairing: Boolean = false,
+    val codeRequested: Boolean = false, // Android asked for the pairing code, the app shows a pad
     val connected: Boolean = false,
     val bluetoothProblem: String? = null,
 ) {
@@ -91,17 +94,24 @@ object WatchStore {
 
     fun startPairing() = update(save = false) { it.copy(pairing = true) }
 
-    fun cancelPairing() = update(save = false) { it.copy(pairing = false) }
+    fun cancelPairing() = update(save = false) { it.copy(pairing = false, codeRequested = false) }
 
     fun forget() = update { s ->
-        WatchState(fastAdvertising = s.fastAdvertising)
+        WatchState(fastAdvertising = s.fastAdvertising, alwaysReachable = s.alwaysReachable)
     }
 
     fun setFastAdvertising(fast: Boolean) = update { it.copy(fastAdvertising = fast) }
 
+    fun setAlwaysReachable(on: Boolean) = update { it.copy(alwaysReachable = on) }
+
     // --- From the Bluetooth service ------------------------------------------------
 
     fun setConnected(connected: Boolean) = update(save = false) { it.copy(connected = connected) }
+
+    fun setCodeRequested(requested: Boolean) =
+        update(save = false) { it.copy(codeRequested = requested) }
+
+    fun setPairingAddress(address: String) = update { it.copy(pairingAddress = address) }
 
     fun setBluetoothProblem(problem: String?) =
         update(save = false) { it.copy(bluetoothProblem = problem) }
@@ -147,6 +157,7 @@ object WatchStore {
                 batteryMv = st.batteryMv,
                 batteryPermille = st.batteryPermille,
                 pairing = false,
+                codeRequested = false,
             )
         }
         return accepted
@@ -174,6 +185,8 @@ object WatchStore {
             batteryMv = prefs.getInt("batteryMv", 0),
             batteryPermille = prefs.getInt("batteryPermille", 0),
             fastAdvertising = prefs.getBoolean("fast", true),
+            alwaysReachable = prefs.getBoolean("alwaysReachable", false),
+            pairingAddress = prefs.getString("pairingAddress", null),
         )
     }
 
@@ -192,6 +205,8 @@ object WatchStore {
             .putInt("batteryMv", s.batteryMv)
             .putInt("batteryPermille", s.batteryPermille)
             .putBoolean("fast", s.fastAdvertising)
+            .putBoolean("alwaysReachable", s.alwaysReachable)
+            .putString("pairingAddress", s.pairingAddress)
         if (s.settings.isEmpty()) edit.remove(KEY_SCHEMA)
         edit.apply()
     }

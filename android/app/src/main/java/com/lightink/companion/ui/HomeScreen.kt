@@ -1,5 +1,6 @@
 package com.lightink.companion.ui
 
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import android.text.format.DateUtils
@@ -15,6 +16,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.sp
+import com.lightink.companion.Bonds
+import com.lightink.companion.PairingCode
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -181,36 +191,46 @@ private fun WatchCard(state: WatchState, enabled: Boolean) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
-                state.pairing -> Pairing()
+                state.pairing -> Pairing(state)
                 state.paired -> Paired(state)
-                else -> NotPaired(enabled)
+                else -> NotPaired(state, enabled)
             }
         }
     }
 }
 
+/** Android refuses a watch it still has a bond with: drop old bonds first. */
+private fun startPairing(context: Context, state: WatchState) {
+    Bonds.clearForPairing(context, state)
+    WatchStore.startPairing()
+}
+
 @Composable
-private fun NotPaired(enabled: Boolean) {
+private fun NotPaired(state: WatchState, enabled: Boolean) {
+    val context = LocalContext.current
     Text("No watch paired", style = MaterialTheme.typography.titleLarge)
     Text(
         "Pair once and the watch keeps its settings in sync with this phone. It checks in " +
             "for a moment while its screen refreshes, so the app only has to stay installed.",
         style = MaterialTheme.typography.bodyMedium,
     )
-    Button(onClick = WatchStore::startPairing, enabled = enabled) { Text("Pair watch") }
+    Button(onClick = { startPairing(context, state) }, enabled = enabled) { Text("Pair watch") }
 }
 
 @Composable
-private fun Pairing() {
+private fun Pairing(state: WatchState) {
     Text("Pairing", style = MaterialTheme.typography.titleLarge)
     LinearProgressIndicator(Modifier.fillMaxWidth())
-    Step(1, "On the watch, open Bluetooth › Pair phone.")
-    Step(2, "The watch shows a 6 digit code and Android asks for it. " +
-        "If no dialog appears, look for a pairing notification.")
-    Step(3, "Type the code here. The watch says \"Paired!\" when done.")
+    if (state.codeRequested) {
+        CodeEntry()
+    } else {
+        Step(1, "On the watch, open Bluetooth › Pair phone.")
+        Step(2, "The watch shows a 6 digit code: type it here when asked. " +
+            "The watch says \"Paired!\" when done.")
+    }
     Text(
-        "Pairing again after a failed try? Android refuses a watch it still remembers: " +
-            "remove it from Bluetooth settings first (it may show as its address).",
+        "If the watch says \"Pairing failed\" right away, Android may still remember it: " +
+            "remove \"LightInk\" (or its address) in Bluetooth settings and try again.",
         style = MaterialTheme.typography.bodySmall,
     )
     val context = LocalContext.current
@@ -220,6 +240,29 @@ private fun Pairing() {
             Text("Bluetooth settings")
         }
     }
+}
+
+/** The watch's passkey on a number pad, handed to Android once the 6 digits are in. */
+@Composable
+private fun CodeEntry() {
+    var code by remember { mutableStateOf("") }
+    var refused by remember { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    Text("Type the code shown on the watch", style = MaterialTheme.typography.bodyLarge)
+    OutlinedTextField(
+        value = code,
+        onValueChange = { typed ->
+            code = typed.filter(Char::isDigit).take(6)
+            if (code.length == 6) refused = !PairingCode.submit(code)
+        },
+        singleLine = true,
+        // Digits only, shown as typed
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+        textStyle = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 8.sp, textAlign = TextAlign.Center),
+        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+    )
+    if (refused) Text("Android didn't take the code", color = MaterialTheme.colorScheme.error)
 }
 
 @Composable
@@ -266,7 +309,7 @@ private fun Paired(state: WatchState) {
         TextButton(onClick = WatchStore::discardPending) { Text("Discard changes") }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilledTonalButton(onClick = WatchStore::startPairing) { Text("Pair again") }
+        FilledTonalButton(onClick = { startPairing(context, state) }) { Text("Pair again") }
         OutlinedButton(onClick = { confirmForget = true }) { Text("Forget watch") }
     }
 
@@ -276,16 +319,17 @@ private fun Paired(state: WatchState) {
             title = { Text("Forget the watch?") },
             text = {
                 Text(
-                    "The phone stops answering the watch. Also use Bluetooth › Forget phone on " +
-                        "the watch, and remove the watch from Android's Bluetooth settings " +
-                        "(it may show as its address)."
+                    "The phone stops answering the watch and drops its Bluetooth pairing. " +
+                        "Also use Bluetooth › Forget phone on the watch."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     confirmForget = false
+                    val removed = Bonds.remove(context, state.watchAddress)
                     WatchStore.forget()
-                    context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+                    // This phone doesn't let apps remove a bond: the user does it there
+                    if (!removed) context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 }) { Text("Forget") }
             },
             dismissButton = { TextButton(onClick = { confirmForget = false }) { Text("Cancel") } },
@@ -401,6 +445,22 @@ private fun AppCard(state: WatchState) {
             colors = ListItemDefaults.colors(containerColor = CardDefaults.cardColors().containerColor),
             trailingContent = {
                 Switch(checked = state.fastAdvertising, onCheckedChange = WatchStore::setFastAdvertising)
+            },
+        )
+        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+        ListItem(
+            headlineContent = { Text("Always reachable") },
+            supportingContent = {
+                Text(
+                    "Keeps a notification so Android doesn't stop the app: the watch can sync " +
+                        "any time and its battery and settings show up here. Off, the " +
+                        "notification is only there while changes wait for the watch, and the " +
+                        "watch's own changes arrive when the app is open."
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = CardDefaults.cardColors().containerColor),
+            trailingContent = {
+                Switch(checked = state.alwaysReachable, onCheckedChange = WatchStore::setAlwaysReachable)
             },
         )
         Spacer(Modifier.height(4.dp))
