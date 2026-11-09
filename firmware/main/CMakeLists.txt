@@ -49,7 +49,8 @@ set(srcs
     secrets.cpp
 
     ble.cpp
-    remote_settings.cpp
+    settings_table.cpp
+    storage.cpp
 
     gps.cpp
     radio.cpp

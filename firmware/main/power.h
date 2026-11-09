@@ -10,7 +10,7 @@
 /* Helper class to handle extra power needed for WiFi/Display operations
  */
 struct Power {
-    enum Flag : uint8_t {
+    enum Flag : uint16_t {
         Display = 0x01,
         Light = 0x02,
         Speaker = 0x04,
@@ -19,6 +19,9 @@ struct Power {
         BT = 0x20,
         Lora = 0x40,
         Trace = 0x80, // Debug trace: rail high while awake (see trace.cpp)
+        // NVS writes (storage.cpp): flash program/erase fail at the low rail, measured on
+        // HW v4: the write returns OK and reads back as missing. Not in the 8 bit trace
+        Flash = 0x100,
     };
 
     struct Lock {

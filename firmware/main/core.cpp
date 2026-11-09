@@ -12,6 +12,7 @@
 #include "hardware.h"
 #include "settings.h"
 #include "trace.h"
+#include "settings_table.h"
 
 #include "watchface_default.h"
 #include "watchface_eclipse.h"
@@ -67,11 +68,12 @@ Core::Core()
     // reset calibration to the ESP32
     mTime.calReset();
     mTime.getMinutesWest() = 60; // Default zone +1
-    mTime.readTime();
 
-    // Recover Settings from Disk // TODO
-    // load NVS and load settings
-    Ble::load(); // The phone pairing survives resets
+    // Settings and the phone pairing saved in flash survive resets and flashing
+    SettingsTable::load();
+    mTime.calSet(); // The stored calibration, if any
+    mTime.readTime();
+    Ble::load();
 
     // Queue the rest of the first boot for later (GPS, LORA, NTP, Touch)
     mGps.off();
@@ -198,6 +200,9 @@ Core::Core()
     // Finish pending tasks, then setup touch
     finishTasks();
     mTouch.enable();
+
+    // Settings to flash, at most hourly and only if changed: a time compare otherwise
+    SettingsTable::save(mTime.getTimeval().tv_sec);
 
     // Calculate stepsize based on battery level or on battery save mode
     auto stepSize = [&] {

@@ -13,7 +13,7 @@
 
 namespace {
   RTC_SLOW_ATTR bool kPrev{false};
-  RTC_SLOW_ATTR std::atomic<uint8_t> kLock{0};
+  RTC_SLOW_ATTR std::atomic<uint16_t> kLock{0};
 
   // Peterson's lock for Critical, one contender per core since it runs with
   // interrupts off. Only plain loads and stores: S32C1I is not atomic between
@@ -84,7 +84,7 @@ void Power::hold(gpio_num_t pin, bool enable) {
 }
 
 void Power::lock(Flag f) {
-  uint8_t mask;
+  uint16_t mask;
   bool rail;
   {
     // The mask and the pin change together, so once this returns the rail is high
@@ -102,7 +102,7 @@ void Power::lock(Flag f) {
 }
 
 void Power::unlock(Flag f) {
-  uint8_t mask;
+  uint16_t mask;
   bool rail;
   {
     Critical lock;

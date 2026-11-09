@@ -295,7 +295,7 @@ namespace Trace {
     p[5] = stubArmed && !pending;
     p[6] = uint8_t(kSettings.mUi.mDepth);
     // Locks and rail as the sleep will have them, once the trace's own lock is released
-    const uint8_t locks = Power::status() & ~Power::Flag::Trace;
+    const uint16_t locks = Power::status() & ~Power::Flag::Trace;
     bool rail = Power::current();
     if constexpr (HW::kVoltageSelectPin != uint8_t(-1))
       rail = locks || !HW::kHasLowVoltage || !kSettings.mPower.mLowVoltage;

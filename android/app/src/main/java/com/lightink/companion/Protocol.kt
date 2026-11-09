@@ -11,7 +11,7 @@ import java.util.UUID
  * something to exchange. All multi-byte numbers are little endian.
  */
 object Protocol {
-    const val VERSION = 1
+    const val VERSION = 2
     const val COMPANY_ID = 0xFFFF // Bluetooth SIG "no company", fine for a private protocol
 
     // 4c494748-5449-4e4b-0000-0000000000xx: "LIGHTINK"
@@ -35,7 +35,7 @@ object Protocol {
         byteArrayOf('L'.code.toByte(), 'K'.code.toByte(), VERSION.toByte(), flags.toByte()) +
             le32(token)
 
-    enum class Kind { BOOL, INT, ENUM, TZ_MINUTES }
+    enum class Kind { BOOL, INT, ENUM, TZ_MINUTES, BLOB }
 
     data class Setting(
         val id: Int,
@@ -49,7 +49,7 @@ object Protocol {
         fun clamp(v: Int) = v.coerceIn(min, max)
     }
 
-    /** schema: version u8, count u8, then per entry: id u8, kind u8, min i16, max i16,
+    /** schema: version u8, count u8, then per entry: id u8, kind u8, min i32, max i32,
      *  group\0, name\0, options joined by '|'\0 */
     fun parseSchema(data: ByteArray): List<Setting> {
         val r = Reader(data)
@@ -58,8 +58,8 @@ object Protocol {
         return List(count) {
             val id = r.u8()
             val kind = Kind.entries.getOrElse(r.u8()) { Kind.INT }
-            val min = r.i16()
-            val max = r.i16()
+            val min = r.i32()
+            val max = r.i32()
             val group = r.string()
             val name = r.string()
             val options = r.string().let { if (it.isEmpty()) emptyList() else it.split('|') }
@@ -79,7 +79,7 @@ object Protocol {
     )
 
     /** state: version u8, flags u8, token u32, schema hash u32, ack rev u16,
-     *  battery mV u16, battery 0.1% u16, time u32, then (id u8, value i16) triples */
+     *  battery mV u16, battery 0.1% u16, time u32, then value records */
     fun parseState(data: ByteArray): State {
         val r = Reader(data)
         require(r.u8() == VERSION) { "state version" }
@@ -91,18 +91,19 @@ object Protocol {
             batteryMv = r.u16(),
             batteryPermille = r.u16(),
             watchTime = r.u32(),
-            values = parseValues(r),
+            values = parseRecords(r),
         )
     }
 
-    /** pending: version u8, rev u16, then (id u8, value i16) triples */
+    /** pending: version u8, rev u16, then value records */
     fun pending(rev: Int, changes: Map<Int, Int>): ByteArray {
         val out = ArrayList<Byte>()
         out += VERSION.toByte()
         out += le16(rev).toList()
         for ((id, v) in changes) {
             out += id.toByte()
-            out += le16(v).toList()
+            out += 4.toByte()
+            out += le32(v.toLong()).toList()
         }
         return out.toByteArray()
     }
@@ -128,9 +129,25 @@ object Protocol {
         }
     }
 
-    private fun parseValues(r: Reader): Map<Int, Int> {
+    /**
+     * Value records, the same format the watch keeps in its flash: id u8, length u8,
+     * data. Numbers are signed little endian of 1, 2 or 4 bytes; other records (raw
+     * structs the app has no use for) are skipped.
+     */
+    private fun parseRecords(r: Reader): Map<Int, Int> {
         val values = LinkedHashMap<Int, Int>()
-        while (r.remaining() >= 3) values[r.u8()] = r.i16()
+        while (r.remaining() >= 2) {
+            val id = r.u8()
+            val len = r.u8()
+            if (len > r.remaining()) break
+            val data = r.bytes(len)
+            if (len == 1 || len == 2 || len == 4) {
+                var v = 0
+                for (i in 0 until len) v = v or ((data[i].toInt() and 0xFF) shl (8 * i))
+                val shift = 32 - 8 * len
+                values[id] = (v shl shift) shr shift
+            }
+        }
         return values
     }
 
@@ -146,7 +163,8 @@ object Protocol {
             return data[pos++].toInt() and 0xFF
         }
         fun u16() = u8() or (u8() shl 8)
-        fun i16() = u16().toShort().toInt()
+        fun i32() = u32().toInt()
+        fun bytes(n: Int) = data.copyOfRange(pos, pos + n).also { pos += n }
         fun u32() = u16().toLong() or (u16().toLong() shl 16)
         fun string(): String {
             val end = (pos until data.size).firstOrNull { data[it] == 0.toByte() }

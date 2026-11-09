@@ -328,6 +328,8 @@ private fun SettingRow(setting: Protocol.Setting, value: Int?, pending: Boolean)
                 Protocol.Kind.ENUM -> EnumPicker(setting, v, set)
                 Protocol.Kind.INT -> Stepper(v.toString(), { set(v - 1) }, { set(v + 1) })
                 Protocol.Kind.TZ_MINUTES -> Stepper(utcOffset(v), { set(v - 15) }, { set(v + 15) })
+                Protocol.Kind.BLOB -> {} // Stored on the watch only, never in the schema
+
             }
         },
     )

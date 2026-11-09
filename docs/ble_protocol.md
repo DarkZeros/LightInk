@@ -1,6 +1,6 @@
 # Watch ↔ phone Bluetooth protocol
 
-The watch (`firmware/main/ble.cpp`, `remote_settings.cpp`) and the Android app
+The watch (`firmware/main/ble.cpp`, `settings_table.cpp`) and the Android app
 (`android/`, `Protocol.kt`) share this format. Change both sides together and bump the
 version byte when an old peer would misread the new layout.
 
@@ -41,7 +41,7 @@ advertising* off). Manufacturer specific data, company id `0xFFFF`:
 |-------:|-----:|-----------------------------------------|
 | 0      | 2    | Company id `FF FF`                      |
 | 2      | 2    | `'L' 'K'`                               |
-| 4      | 1    | Protocol version, `1`                   |
+| 4      | 1    | Protocol version, `2`                   |
 | 5      | 1    | Flags, below                            |
 | 6      | 4    | Token (u32 LE), `0` while pairing       |
 
@@ -81,7 +81,7 @@ What survives what:
 |------|-------|------------------------|----------------------|
 | Pairing (`BlePeer`: token, key) | NVS, copy in RTC | kept, reloaded on cold boot | lost, pair again |
 | Bluetooth stats, *Auto* interval, sent hashes | RTC (`kSettings.mBle`) | back to defaults | lost |
-| Watch settings | RTC (`kSettings`), not saved yet | back to defaults, sent to the app at the next sync | lost |
+| Watch settings (the table, app and stored-only entries) | RTC, saved to NVS hourly when changed | kept, up to an hour of changes lost | lost, defaults sent to the app |
 | Phone side: bond, token, schema, values | Android bond store, app preferences | kept | kept (remove the bond to pair again) |
 
 `idf.py flash` writes the bootloader, partition table, otadata and the app, never the
@@ -105,7 +105,8 @@ The watch finds the service by UUID each time and reuses the characteristic hand
 from the last discovery while the service start handle is the same (Android numbers a
 service's attributes in a row).
 
-All numbers little endian. A *value triple* is `id u8, value i16`.
+All numbers little endian. Values travel as *records*, the same format the watch keeps
+in flash (see *Settings table* below): `id u8, length u8, data`.
 
 Writes go in pieces, each a plain Write Request of `offset u16, total u16, data`, at
 most MTU − 7 bytes of data; the app joins them and handles the value when `total` is
@@ -117,7 +118,7 @@ prepared piece. The tables below describe the joined value.
 
 | Offset | Size | Field                                                     |
 |-------:|-----:|-----------------------------------------------------------|
-| 0      | 1    | Version, `1`                                              |
+| 0      | 1    | Version, `2`                                              |
 | 1      | 1    | Flags: `0x01` `JUST_PAIRED`                               |
 | 2      | 4    | Token                                                     |
 | 6      | 4    | Schema hash (CRC-32 of the `SCHEMA` blob)                 |
@@ -125,7 +126,7 @@ prepared piece. The tables below describe the joined value.
 | 12     | 2    | Battery mV                                                |
 | 14     | 2    | Battery, 0.1 % units                                      |
 | 16     | 4    | Watch time, UTC seconds                                   |
-| 20     | 3n   | Every value, as triples                                   |
+| 20     | n    | Every app value, as records                               |
 
 The phone rejects a `STATE` whose token isn't its own (unless pairing). It drops the
 pending changes with a rev up to the ack rev: later edits keep waiting. A schema hash
@@ -135,9 +136,9 @@ different from the one it knows (firmware update) raises `WANT_SCHEMA`.
 
 | Offset | Size | Field                              |
 |-------:|-----:|------------------------------------|
-| 0      | 1    | Version, `1`                       |
+| 0      | 1    | Version, `2`                       |
 | 1      | 2    | Rev: the app's edit counter (u16)  |
-| 3      | 3n   | Changed values, as triples         |
+| 3      | n    | Changed values, as records         |
 
 The watch clamps each value to the setting's range, skips unknown ids, applies them
 after the display refresh and redraws when something changed.
@@ -146,20 +147,49 @@ after the display refresh and redraws when something changed.
 
 | Size | Field                                                            |
 |-----:|------------------------------------------------------------------|
-| 1    | Version, `1`                                                     |
+| 1    | Version, `2`                                                     |
 | 1    | Count                                                            |
 |      | Per setting:                                                     |
 | 1    | Id                                                               |
 | 1    | Kind: 0 bool, 1 int, 2 enum (value = option index), 3 UTC offset in minutes |
-| 2    | Min (i16)                                                        |
-| 2    | Max (i16)                                                        |
+| 4    | Min (i32)                                                        |
+| 4    | Max (i32)                                                        |
 | n    | Group, NUL terminated                                            |
 | n    | Name, NUL terminated                                             |
 | n    | Enum options joined by `\|`, NUL terminated (empty otherwise)    |
 
 The app has no list of settings of its own: it builds its screens from this. To expose
-a setting, add a line to the table in `remote_settings.cpp`. Ids are stable: never
+a setting, add a line to the table in `settings_table.cpp`. Ids are stable: never
 reuse or renumber one.
+
+## Settings table: one format for RTC, flash and the app
+
+`firmware/main/settings_table.cpp` lists every persistent setting in `kSettings` once:
+stable id, kind, range, and how to read and write the field. Entries flagged `kApp` are
+in the schema and travel to and from the app; the others (RTC calibration, touch pad
+map and cycles, battery tuning, alarms) are stored only. The same table and the same
+records serve the three copies:
+
+| Copy | Content | When |
+|------|---------|------|
+| RTC (`kSettings`) | The structs the firmware uses | Always |
+| NVS key `settings` | Format byte `1`, then records of every entry | Loaded on a cold boot. Saved by `SettingsTable::save()` at the end of a full wake when an hour passed since its last check *and* the CRC of the records changed |
+| App | Records of the `kApp` entries, schema | Each sync |
+
+Records: `id u8, length u8, data`. Numbers are signed little endian of 1, 2 or 4 bytes
+(the field's size; the app sends 4). A few small fixed structs go as their raw bytes
+(`Blob`, stored only), with a check before they're applied. A reader skips unknown ids
+and records whose length doesn't fit the entry, and clamps numbers to the range: a blob
+stored by another firmware version still loads, the rest keep their defaults.
+
+Power: a normal wake only compares the time of the last check. Once an hour the records
+are encoded and hashed (~100 bytes, microseconds); flash is written only when they
+changed. NVS appends: the ~120 byte blob takes about 6 of a page's 126 entries, so even
+a change every hour fills a 4 KB page in about a day, and the pages rotate. Flash
+sectors last ~100k erases: centuries at that rate. Up to an hour of changes is lost on
+a reset.
+
+The pairing key is a separate NVS key (`ble_peer`), written only when pairing.
 
 ## Power notes
 
@@ -195,6 +225,13 @@ reuse or renumber one.
   (the app was put in pairing mode after the watch started), connected 2410, encrypted
   13352 (typing the code), done 13547. The exchange after encryption, with the schema,
   took ~195 ms.
+- **Flash writes failed at the low rail, so the pairing never survived a reset.** With
+  no `Power::Lock` held, HW v4 runs at ~1.9 V: NVS reads work, but writes return OK and
+  then read back as missing (`ble_peer` was absent; the NVS used-entry count grew 5 per
+  write without the key ever being found). Holding the rail high fixed it at once:
+  create and update read back 109 B, and an update survived a reset with the same hash.
+  `Storage` now holds `Power::Flag::Flash` for every NVS call that may write. Pairings
+  made before this fix have to be made again, once.
 - **Open: the stack start.** 292 ms to bring NimBLE and the controller up is longer than
   the ~200 ms refresh window, and a background sync gives up when the refresh ends. If
   later sessions show the same, an automatic sync can never find the phone: start the

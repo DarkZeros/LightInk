@@ -34,6 +34,13 @@ struct Settings {
     WatchfaceSettings mWatchface;
     BleSettings mBle;
 
+    // Flash copy of the settings (settings_table.cpp): when save() last looked, and the
+    // hash of what flash holds
+    struct Store {
+        time_t mLastCheck {0};
+        uint32_t mSavedHash {0};
+    } mStore;
+
     struct Power {
         bool mNight {false};
         bool mAuto {true};

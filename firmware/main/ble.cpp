@@ -14,8 +14,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
-#include "nvs.h"
-#include "nvs_flash.h"
 
 #include "host/ble_hs.h"
 #include "host/util/util.h"
@@ -24,7 +22,8 @@
 
 #include "peripherals.h"
 #include "power.h"
-#include "remote_settings.h"
+#include "settings_table.h"
+#include "storage.h"
 #include "settings.h"
 
 extern "C" void ble_store_config_init(void);
@@ -42,7 +41,7 @@ constexpr const char* TAG = "ble";
 constexpr bool kLogSessions = false;
 
 // Phone advertisement, manufacturer specific data (docs/ble_protocol.md)
-constexpr uint8_t kProto = 1;
+constexpr uint8_t kProto = 2;
 constexpr uint8_t kAdvLen = 10; // Company id (2), "LK" (2), proto, flags, token (4)
 enum AdvFlag : uint8_t {
     kPairing = 0x01,    // App is on its pairing screen, token is 0
@@ -75,8 +74,7 @@ constexpr int64_t kStepUs = 2'000'000;      // Any single GATT step
 // Connect even with nothing new, so the app sees the watch (battery) once a day
 constexpr time_t kRefreshEvery = 24 * 3600;
 
-constexpr const char* kNvsNamespace = "lightink";
-constexpr const char* kNvsPeer = "ble_peer";
+constexpr const char* kPeerKey = "ble_peer";
 
 enum : EventBits_t {
     kEvSynced = 1 << 0,
@@ -89,23 +87,13 @@ enum : EventBits_t {
     kEvDone = 1 << 7,
 };
 
-bool initNvs() {
-    auto err = nvs_flash_init(); // ESP_OK as well when it's already up
-    if (err != ESP_OK)
-        ESP_LOGE(TAG, "nvs %s", esp_err_to_name(err));
-    return err == ESP_OK;
-}
-
+// Its own key, apart from the settings blob: a key, written only when pairing
 void savePeer(const std::optional<BlePeer>& peer) {
-    nvs_handle_t h;
-    if (!initNvs() || nvs_open(kNvsNamespace, NVS_READWRITE, &h) != ESP_OK)
-        return;
+    static_assert(std::is_trivially_copyable_v<BlePeer>);
     if (peer)
-        nvs_set_blob(h, kNvsPeer, &*peer, sizeof(BlePeer));
+        Storage::write(kPeerKey, {reinterpret_cast<const uint8_t*>(&*peer), sizeof(BlePeer)});
     else
-        nvs_erase_key(h, kNvsPeer);
-    nvs_commit(h);
-    nvs_close(h);
+        Storage::erase(kPeerKey);
 }
 
 uint32_t get32(const uint8_t* p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
@@ -205,7 +193,7 @@ private:
     int64_t step() const { return std::min(esp_timer_get_time() + kStepUs, mDeadlineUs); }
 
     bool startStack() {
-        initNvs(); // PHY calibration data; without it the radio still works, slower
+        Storage::init(); // PHY calibration data; without it the radio still works, slower
         if (nimble_port_init() != ESP_OK)
             return false;
         mStackUp = true;
@@ -527,7 +515,7 @@ private:
             ackRev = mRead[1] | mRead[2] << 8;
             mChanges.assign(mRead.begin() + 3, mRead.end());
             // Send the values as they will be once applied
-            RemoteSettings::overlay(mValues, mChanges);
+            SettingsTable::overlay(mValues, mChanges);
         }
         if (mSendSchema || (mAdvFlags & kWantSchema)) {
             mStep = "schema";
@@ -579,11 +567,11 @@ void prepare(Session& s) {
     auto& ble = kSettings.mBle;
     s.mPeer = ble.mPeer;
     s.mHandles = ble.mHandles;
-    s.mValues = RemoteSettings::values();
-    s.mSchema = RemoteSettings::schema();
-    s.mSchemaHash = RemoteSettings::hash(s.mSchema);
+    s.mValues = SettingsTable::values(SettingsTable::Scope::App);
+    s.mSchema = SettingsTable::schema();
+    s.mSchemaHash = SettingsTable::hash(s.mSchema);
     const bool pair = s.mMode == Mode::Pair;
-    s.mSendValues = pair || RemoteSettings::hash(s.mValues) != ble.mSentValues;
+    s.mSendValues = pair || SettingsTable::hash(s.mValues) != ble.mSentValues;
     s.mSendSchema = pair || s.mSchemaHash != ble.mSentSchema;
     s.mStale = s.mNow - ble.mLastSync >= kRefreshEvery;
 }
@@ -606,9 +594,9 @@ bool commit(Session& s) {
         ble.mLastSeen = s.mNow;
     ble.mResult = s.mResult;
     ble.mHandles = s.mHandles;
-    const bool changed = RemoteSettings::apply(s.mChanges);
+    const bool changed = SettingsTable::apply(s.mChanges, SettingsTable::Scope::App);
     if (s.mValuesSent)
-        ble.mSentValues = RemoteSettings::hash(s.mValues);
+        ble.mSentValues = SettingsTable::hash(s.mValues);
     if (s.mSchemaSent)
         ble.mSentSchema = s.mSchemaHash;
     if (s.mResult == BleResult::Synced)
@@ -619,14 +607,12 @@ bool commit(Session& s) {
 } // namespace
 
 void load() {
-    nvs_handle_t h;
-    if (!initNvs() || nvs_open(kNvsNamespace, NVS_READONLY, &h) != ESP_OK)
-        return;
-    BlePeer peer;
-    size_t size = sizeof(peer);
-    if (nvs_get_blob(h, kNvsPeer, &peer, &size) == ESP_OK && size == sizeof(peer))
+    const auto data = Storage::read(kPeerKey);
+    if (data.size() == sizeof(BlePeer)) {
+        BlePeer peer;
+        std::memcpy(&peer, data.data(), sizeof(peer));
         kSettings.mBle.mPeer = peer;
-    nvs_close(h);
+    }
 }
 
 bool due(time_t now) {
