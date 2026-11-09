@@ -6,6 +6,9 @@
 #include "settings.h"
 #include "ble.h"
 
+#include <atomic>
+#include <cstdio>
+
 std::vector<UI::Any> buildAlarms(Core& core) {
   std::vector<UI::Any> alarms;
   auto newAlarm = [&] -> std::optional<int> {
@@ -46,6 +49,89 @@ std::vector<UI::Any> buildRadios() {
   }
   return radios;
 };
+
+namespace {
+
+// "hh:mm dd/mm" in local time, or "never"
+std::string stamp(time_t utc, Time& time) {
+  if (!utc)
+    return "never";
+  tmElements_t t;
+  breakTime(utc + time.getMinutesWest() * 60, t);
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%02d:%02d %02d/%02d", t.Hour, t.Minute, t.Day, t.Month);
+  return buf;
+}
+
+std::string bleStatus(Time& time) {
+  auto& ble = kSettings.mBle;
+  if (!ble.mPeer)
+    return "\nNot paired";
+  // 16 characters fit in a line
+  return "\nPaired\nLast: " + std::string(magic_enum::enum_name(ble.mResult)) +
+    "\nSync " + stamp(ble.mLastSync, time) +
+    "\nSeen " + stamp(ble.mLastSeen, time);
+}
+
+const char* bleMessage(BleResult result) {
+  switch (result) {
+  case BleResult::Synced: return "Synced";
+  case BleResult::Seen: return "Phone seen\nnothing new";
+  case BleResult::NoPhone: return "Phone not\nfound\nIs the app\nrunning?";
+  case BleResult::NeedsPair: return "Phone lost\nthe pairing\nPair again";
+  case BleResult::Cancelled: return "Cancelled";
+  default: return "Bluetooth\nfailed";
+  }
+}
+
+} // namespace
+
+Ble::Watch Core::bleWatch() {
+  return {mTime.getTimeval().tv_sec, mBattery.mCurVoltage, mBattery.mCurPercent};
+}
+
+void Core::pairPhone() {
+  mBleUsed = true;
+  Cancel cancel{[this]{ return (mTouch.poll() & Touch::BACK) != 0; }};
+  std::atomic<int32_t> code{-1};
+  auto job = std::async(std::launch::async, [&]{
+    return Ble::pair(bleWatch(), cancel, [&](uint32_t c){ code = c; });
+  });
+  progress("Pairing\nIn the app\ntap Pair\nBACK cancels");
+  // The code comes from the radio task once the phone is found, the phone then asks
+  // for it right away
+  bool shown = false;
+  while (job.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
+    if (!shown && code >= 0) {
+      shown = true;
+      char msg[48];
+      std::snprintf(msg, sizeof(msg), "Pair code\n%03ld %03ld\nType it on\nthe phone",
+                    (long)code / 1000, (long)code % 1000);
+      progress(msg);
+    }
+  }
+  const auto result = job.get();
+  if (result == BleResult::Cancelled)
+    kSettings.mUi.mPopup.reset();
+  else if (result == BleResult::Synced)
+    kSettings.mUi.popup("Paired!");
+  else
+    kSettings.mUi.popup(shown ? "Pairing\nfailed" : bleMessage(result));
+  regenerateMenus();
+}
+
+void Core::syncPhone() {
+  mBleUsed = true;
+  auto result = BleResult::Failed;
+  bool changed = false;
+  runCancellable("Syncing\nBACK cancels", [&](const Cancel& cancel) {
+    result = Ble::syncNow(bleWatch(), cancel, changed);
+  });
+  if (result != BleResult::Cancelled)
+    kSettings.mUi.popup(bleMessage(result));
+  if (changed)
+    regenerateMenus();
+}
 
 UI::Any Core::generateMenus() {
   return UI::Menu{"Main Menu", {
@@ -143,6 +229,17 @@ UI::Any Core::generateMenus() {
       UI::Loop<MeasureRate>{"Menu Rate", kSettings.mTouch.mRate[0]},
       UI::Loop<MeasureRate>{"Watch Rate", kSettings.mTouch.mRate[1]},
     }},
+    UI::Menu{"Bluetooth", {
+      UI::Action{kSettings.mBle.mPeer ? "Pair again" : "Pair phone", [&]{ pairPhone(); }},
+      UI::Action{"Sync now", [&]{ syncPhone(); }},
+      UI::Loop<SyncEvery>{"Auto", kSettings.mBle.mEvery},
+      UI::Action{"Forget phone", [&]{
+        Ble::forget();
+        kSettings.mUi.popup("Phone\nforgotten");
+        regenerateMenus();
+      }},
+      UI::Text{[&]{ return bleStatus(mTime); }},
+    }},
     UI::Menu{"Radio", buildRadios()},
     UI::Menu{"Test", {
       UI::Action{"Vib 2x75ms", [&]{
@@ -160,13 +257,6 @@ UI::Any Core::generateMenus() {
       }},
       UI::Action{"Tetris Sound", [&]{
         runCancellable("Playing Tetris\nBACK to cancel", Peripherals::tetris);
-      }},
-      UI::Action{"BLE Test", [&]{
-        // extern void ble_main(void);
-        mTasks.emplace_back(std::async(std::launch::async, []{
-          // ble_main();
-          delay(50'000);
-        }));
       }},
       UI::Action{"Lora Start Rcv", [&]{
         mTasks.emplace_back(std::async(std::launch::async, [&]{

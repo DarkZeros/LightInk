@@ -18,6 +18,9 @@
 
 RTC_DATA_ATTR Settings kSettings;
 
+// Below 10% the radio's current peaks aren't worth the risk, the phone can wait
+constexpr uint16_t kBleMinBattery = 100;
+
 // IDF reports every pending cause as a mask, we act on one: same priority as the
 // esp_sleep_get_wakeup_cause() this replaces, for the sources we arm
 static esp_sleep_wakeup_cause_t wakeupCause() {
@@ -68,6 +71,7 @@ Core::Core()
 
     // Recover Settings from Disk // TODO
     // load NVS and load settings
+    Ble::load(); // The phone pairing survives resets
 
     // Queue the rest of the first boot for later (GPS, LORA, NTP, Touch)
     mGps.off();
@@ -148,6 +152,14 @@ Core::Core()
         break;
     }
 
+    // Bluetooth sync with the phone, only on wakes that boot anyway. It runs while the
+    // display refreshes and gives up when the refresh ends unless the phone answered
+    std::optional<Ble::Sync> bleSync;
+    const auto now = mTime.getTimeval().tv_sec;
+    if ((wakeup_reason == ESP_SLEEP_WAKEUP_TIMER || wakeup_reason == ESP_SLEEP_WAKEUP_TOUCHPAD)
+        && !mBleUsed && mBattery.mCurPercent >= kBleMinBattery && Ble::due(now))
+        bleSync.emplace(bleWatch());
+
     // Re-set up the touch if settings have changed
     mTouch.setUp(kSettings.mUi.mDepth < 0);
 
@@ -168,6 +180,20 @@ Core::Core()
     }
 
     draw();
+
+    if (bleSync && bleSync->finish()) {
+        // The app changed settings: show them now, not at the next full wake (the wake
+        // stub would keep drawing the old watchface until then)
+        mTouch.setUp(kSettings.mUi.mDepth < 0);
+        kSettings.mWatchface.mLastDraw.mValid = false;
+        draw();
+    }
+    // Auto sync under an hour needs full wakes of its own, the wake stub doesn't sync.
+    // Not at night or on a low battery, where the sync wouldn't run anyway
+    if (mBattery.mCurPercent >= kBleMinBattery && !(kSettings.mPower.mNight && mNow.Hour < 7)) {
+        if (auto in = Ble::nextSyncIn(now))
+            setNextUpdate(*in);
+    }
 
     // Finish pending tasks, then setup touch
     finishTasks();
@@ -198,7 +224,8 @@ Core::Core()
             secondsWait = seconds;
             nextFullWake = mNow.Minute + 1; // Wake instantly
         } else {
-            nextFullWake = mNow.Minute + seconds / 60;
+            // Never past the hourly full wake (hour beep, ...)
+            nextFullWake = std::min<int>(60, mNow.Minute + seconds / 60);
         }
         kDSState.minutes = (*mNextUpdate + secondsWait) / 60;
         ESP_LOGE("Early Wake", "minutes %d seconds %d", kDSState.minutes, secondsWait);

@@ -63,7 +63,9 @@ The project goals are:
   - [ ] Tides
   - [ ] Pictures, etc
 - [ ] Configurable Alarms
-- [ ] BT - Companion App
+- [ ] BT - Companion App ([android/](android/), [protocol](docs/ble_protocol.md))
+  - [X] Pairing and settings sync
+  - [ ] LoRa messages through the phone
 - [ ] Support other boards
   - [ ] Watchy v1.0 -> [Watchy 1.0 Branch](https://github.com/DarkZeros/LightInk/tree/watchy_1.0)
 

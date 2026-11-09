@@ -1,466 +1,698 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+#include "ble.h"
 
-#include <assert.h>
-#include <stdio.h>
-#include <string.h>
-#include "host/ble_hs.h"
-#include "host/ble_uuid.h"
-#include "services/gap/ble_svc_gap.h"
-#include "services/gatt/ble_svc_gatt.h"
+#include <algorithm>
+#include <atomic>
+#include <cstring>
+#include <string>
+#include <vector>
 
-#include "nimble/ble.h"
-#include "modlog/modlog.h"
-
-#define TAG "NimBLE"
-
-/* Heart-rate configuration */
-#define GATT_HRS_UUID                           0x180D
-#define GATT_HRS_MEASUREMENT_UUID               0x2A37
-#define GATT_HRS_BODY_SENSOR_LOC_UUID           0x2A38
-#define GATT_DEVICE_INFO_UUID                   0x180A
-#define GATT_MANUFACTURER_NAME_UUID             0x2A29
-#define GATT_MODEL_NUMBER_UUID                  0x2A24
-
-extern uint16_t hrs_hrm_handle;
-
-struct ble_hs_cfg;
-struct ble_gatt_register_ctxt;
-
-void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg);
-int gatt_svr_init(void);
-
-static const char *manuf_name = "Apache Mynewt ESP32 devkitC";
-static const char *model_num = "Mynewt HR Sensor demo";
-uint16_t hrs_hrm_handle;
-
-static int
-gatt_svr_chr_access_heart_rate(uint16_t conn_handle, uint16_t attr_handle,
-                               struct ble_gatt_access_ctxt *ctxt, void *arg);
-
-static int
-gatt_svr_chr_access_device_info(uint16_t conn_handle, uint16_t attr_handle,
-                                struct ble_gatt_access_ctxt *ctxt, void *arg);
-
-static const auto uuid_hrs_measurement = BLE_UUID16_DECLARE(GATT_HRS_MEASUREMENT_UUID);
-static const auto uuid_hrs_loc = BLE_UUID16_DECLARE(GATT_HRS_BODY_SENSOR_LOC_UUID);
-
-static const ble_gatt_chr_def hrs_chr_def[] = {
-    {
-        /* Characteristic: Heart-rate measurement */
-        .uuid = uuid_hrs_measurement,
-        .access_cb = gatt_svr_chr_access_heart_rate,
-        .flags = BLE_GATT_CHR_F_NOTIFY,
-        .val_handle = &hrs_hrm_handle,
-    }, {
-        /* Characteristic: Body sensor location */
-        .uuid = uuid_hrs_loc,
-        .access_cb = gatt_svr_chr_access_heart_rate,
-        .flags = BLE_GATT_CHR_F_READ,
-    }, {
-        0, /* No more characteristics in this service */
-    }
-};
-static const ble_gatt_chr_def device_chr_def[] = {
-    {
-        /* Characteristic: * Manufacturer name */
-        .uuid = BLE_UUID16_DECLARE(GATT_MANUFACTURER_NAME_UUID),
-        .access_cb = gatt_svr_chr_access_device_info,
-        .flags = BLE_GATT_CHR_F_READ,
-    }, {
-        /* Characteristic: Model number string */
-        .uuid = BLE_UUID16_DECLARE(GATT_MODEL_NUMBER_UUID),
-        .access_cb = gatt_svr_chr_access_device_info,
-        .flags = BLE_GATT_CHR_F_READ,
-    }, {
-        0, /* No more characteristics in this service */
-    },
-};
-static const ble_gatt_svc_def gatt_svr_svcs[] = {
-    {
-        /* Service: Heart-rate */
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(GATT_HRS_UUID),
-        .characteristics = hrs_chr_def
-    },
-    {
-        /* Service: Device Information */
-        .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_UUID16_DECLARE(GATT_DEVICE_INFO_UUID),
-        .characteristics = device_chr_def
-    },
-    {
-        0, /* No more services */
-    },
-};
-
-static int
-gatt_svr_chr_access_heart_rate(uint16_t conn_handle, uint16_t attr_handle,
-                               struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    /* Sensor location, set to "Chest" */
-    static uint8_t body_sens_loc = 0x01;
-    uint16_t uuid;
-    int rc;
-
-    uuid = ble_uuid_u16(ctxt->chr->uuid);
-
-    if (uuid == GATT_HRS_BODY_SENSOR_LOC_UUID) {
-        rc = os_mbuf_append(ctxt->om, &body_sens_loc, sizeof(body_sens_loc));
-
-        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
-    }
-
-    assert(0);
-    return BLE_ATT_ERR_UNLIKELY;
-}
-
-static int
-gatt_svr_chr_access_device_info(uint16_t conn_handle, uint16_t attr_handle,
-                                struct ble_gatt_access_ctxt *ctxt, void *arg)
-{
-    uint16_t uuid;
-    int rc;
-
-    uuid = ble_uuid_u16(ctxt->chr->uuid);
-
-    if (uuid == GATT_MODEL_NUMBER_UUID) {
-        rc = os_mbuf_append(ctxt->om, model_num, strlen(model_num));
-        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
-    }
-
-    if (uuid == GATT_MANUFACTURER_NAME_UUID) {
-        rc = os_mbuf_append(ctxt->om, manuf_name, strlen(manuf_name));
-        return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
-    }
-
-    assert(0);
-    return BLE_ATT_ERR_UNLIKELY;
-}
-
-void
-gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg)
-{
-    char buf[BLE_UUID_STR_LEN];
-
-    switch (ctxt->op) {
-    case BLE_GATT_REGISTER_OP_SVC:
-        ESP_LOGE(TAG, "registered service %s with handle=%d",
-                    ble_uuid_to_str(ctxt->svc.svc_def->uuid, buf),
-                    ctxt->svc.handle);
-        break;
-
-    case BLE_GATT_REGISTER_OP_CHR:
-        ESP_LOGE(TAG, "registering characteristic %s with "
-                    "def_handle=%d val_handle=%d\n",
-                    ble_uuid_to_str(ctxt->chr.chr_def->uuid, buf),
-                    ctxt->chr.def_handle,
-                    ctxt->chr.val_handle);
-        break;
-
-    case BLE_GATT_REGISTER_OP_DSC:
-        ESP_LOGE(TAG, "registering descriptor %s with handle=%d\n",
-                    ble_uuid_to_str(ctxt->dsc.dsc_def->uuid, buf),
-                    ctxt->dsc.handle);
-        break;
-
-    default:
-        assert(0);
-        break;
-    }
-}
-
-int
-gatt_svr_init(void)
-{
-    int rc;
-
-    ble_svc_gap_init();
-    ble_svc_gatt_init();
-
-    rc = ble_gatts_count_cfg(gatt_svr_svcs);
-    if (rc != 0) {
-        return rc;
-    }
-
-    rc = ble_gatts_add_svcs(gatt_svr_svcs);
-    if (rc != 0) {
-        return rc;
-    }
-
-    return 0;
-}
+#include <magic_enum.hpp>
 
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+#include "freertos/task.h"
+#include "nvs.h"
 #include "nvs_flash.h"
-#include "freertos/FreeRTOSConfig.h"
-/* BLE */
-#include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
+
 #include "host/ble_hs.h"
 #include "host/util/util.h"
-#include "console/console.h"
-#include "services/gap/ble_svc_gap.h"
+#include "nimble/nimble_port.h"
+#include "nimble/nimble_port_freertos.h"
 
-static TimerHandle_t blehr_tx_timer;
+#include "peripherals.h"
+#include "power.h"
+#include "remote_settings.h"
+#include "settings.h"
 
-static bool notify_state;
+extern "C" void ble_store_config_init(void);
 
-static uint16_t conn_handle;
+// Arduino's initArduino() (the WiFi code runs it) frees the BLE controller memory unless
+// a BLE library says it's in use
+extern "C" bool bleInUse(void) { return true; }
 
-static const char *device_name = "MyWatch";
+namespace Ble {
+namespace {
 
-static int blehr_gap_event(struct ble_gap_event *event, void *arg);
+constexpr const char* TAG = "ble";
+// Debug: one line per session with its result and timings, and the step that failed
+// ("ble: Synced sync 292 found 2125 conn 2410 enc 13352 done 13547 ms")
+constexpr bool kLogSessions = false;
 
-static uint8_t blehr_addr_type;
+// Phone advertisement, manufacturer specific data (docs/ble_protocol.md)
+constexpr uint8_t kProto = 1;
+constexpr uint8_t kAdvLen = 10; // Company id (2), "LK" (2), proto, flags, token (4)
+enum AdvFlag : uint8_t {
+    kPairing = 0x01,    // App is on its pairing screen, token is 0
+    kPending = 0x02,    // Changes made in the app are waiting for the watch
+    kWantState = 0x04,  // App has no values from the watch (fresh install, ...)
+    kWantSchema = 0x08, // App has no settings description, or an older one
+};
+enum StateFlag : uint8_t {
+    kJustPaired = 0x01,
+};
 
-/* Variable to simulate heart beats */
-static uint8_t heartrate = 90;
+// 4c494748-5449-4e4b-0000-0000000000xx, "LIGHTINK", byte order reversed
+#define LIGHTINK_UUID(n) BLE_UUID128_INIT(n, 0, 0, 0, 0, 0, 0, 0, 0x4b, 0x4e, 0x49, 0x54, 0x48, 0x47, 0x49, 0x4c)
+const ble_uuid128_t kServiceUuid = LIGHTINK_UUID(0x00);
+const ble_uuid128_t kStateUuid = LIGHTINK_UUID(0x01);   // Watch writes its values
+const ble_uuid128_t kPendingUuid = LIGHTINK_UUID(0x02); // Watch reads the app's changes
+const ble_uuid128_t kSchemaUuid = LIGHTINK_UUID(0x03);  // Watch writes the description
+#undef LIGHTINK_UUID
 
+// Android advertises every 100 ms at best (ADVERTISE_MODE_LOW_LATENCY). Connecting
+// takes the advertising event after the one that was heard
+constexpr int kConnectMs = 300;
+// Hard cap of a background sync, from radio on to radio off, for a phone heard late
+// or a slow exchange
+constexpr int64_t kAutoMaxUs = 1'200'000;
+constexpr int64_t kManualMaxUs = 10'000'000;
+constexpr int64_t kPairFindUs = 60'000'000;
+constexpr int64_t kPairCodeUs = 90'000'000; // Typing the code on the phone
+constexpr int64_t kStepUs = 2'000'000;      // Any single GATT step
+// Connect even with nothing new, so the app sees the watch (battery) once a day
+constexpr time_t kRefreshEvery = 24 * 3600;
 
-/*
- * Enables advertising with parameters:
- *     o General discoverable mode
- *     o Undirected connectable mode
+constexpr const char* kNvsNamespace = "lightink";
+constexpr const char* kNvsPeer = "ble_peer";
+
+enum : EventBits_t {
+    kEvSynced = 1 << 0,
+    kEvFound = 1 << 1,
+    kEvConnected = 1 << 2,
+    kEvDisconnected = 1 << 3,
+    kEvEncrypted = 1 << 4,
+    kEvMtu = 1 << 5,
+    kEvGatt = 1 << 6,
+    kEvDone = 1 << 7,
+};
+
+bool initNvs() {
+    auto err = nvs_flash_init(); // ESP_OK as well when it's already up
+    if (err != ESP_OK)
+        ESP_LOGE(TAG, "nvs %s", esp_err_to_name(err));
+    return err == ESP_OK;
+}
+
+void savePeer(const std::optional<BlePeer>& peer) {
+    nvs_handle_t h;
+    if (!initNvs() || nvs_open(kNvsNamespace, NVS_READWRITE, &h) != ESP_OK)
+        return;
+    if (peer)
+        nvs_set_blob(h, kNvsPeer, &*peer, sizeof(BlePeer));
+    else
+        nvs_erase_key(h, kNvsPeer);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+uint32_t get32(const uint8_t* p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+void put16(std::vector<uint8_t>& v, uint16_t x) { v.push_back(x); v.push_back(x >> 8); }
+void put32(std::vector<uint8_t>& v, uint32_t x) { put16(v, x); put16(v, x >> 16); }
+
+} // namespace
+
+enum class Mode { Auto, Manual, Pair };
+
+/* One radio session: the stack comes up, the phone is searched, and if there is
+ * something to exchange the watch connects, encrypts, reads the app's changes and
+ * writes its values. Runs in its own task, NimBLE calls back from the host task
  */
-static void
-blehr_advertise(void)
-{
-    struct ble_gap_adv_params adv_params;
-    struct ble_hs_adv_fields fields;
-    int rc;
+struct Session {
+    Session(Mode mode, const Watch& watch)
+    : mMode(mode), mNow(watch.mNow), mBatteryMv(watch.mBatteryMv)
+    , mBatteryPermille(watch.mBatteryPermille), mEvents(xEventGroupCreate()) {}
+    ~Session() { vEventGroupDelete(mEvents); }
 
-    /*
-     *  Set the advertisement data included in our advertisements:
-     *     o Flags (indicates advertisement type and other general info)
-     *     o Advertising tx power
-     *     o Device name
-     */
-    memset(&fields, 0, sizeof(fields));
+    const Mode mMode;
+    const time_t mNow;
+    const uint16_t mBatteryMv, mBatteryPermille;
+    EventGroupHandle_t mEvents;
+    const Cancel* mCancel {nullptr};
+    std::function<void(uint32_t)> mShowCode;
+    std::atomic<bool> mGiveUp {false}; // Stop searching (display refresh ended)
 
-    /*
-     * Advertise two flags:
-     *      o Discoverability in forthcoming advertisement (general)
-     *      o BLE-only (BR/EDR unsupported)
-     */
-    fields.flags = BLE_HS_ADV_F_DISC_GEN |
-                   BLE_HS_ADV_F_BREDR_UNSUP;
+    // Set up by the caller before start()
+    std::optional<BlePeer> mPeer;
+    BleSettings::Handles mHandles;
+    std::vector<uint8_t> mValues, mSchema;
+    uint32_t mSchemaHash {0};
+    bool mSendValues {false}, mSendSchema {false}, mStale {false};
 
-    /*
-     * Indicate that the TX power level field should be included; have the
-     * stack fill this value automatically.  This is done by assigning the
-     * special value BLE_HS_ADV_TX_PWR_LVL_AUTO.
-     */
-    fields.tx_pwr_lvl_is_present = 1;
-    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+    // Results, read once the task is done
+    BleResult mResult {BleResult::Failed};
+    bool mFound {false};
+    bool mValuesSent {false}, mSchemaSent {false};
+    std::vector<uint8_t> mChanges; // From the app, applied by the caller
+    std::optional<BlePeer> mNewPeer;
+    // Timing, ms from start (for the log)
+    int mTSynced {-1}, mTFound {-1}, mTConnected {-1}, mTEncrypted {-1}, mTDone {-1};
 
-    fields.name = (uint8_t *)device_name;
-    fields.name_len = strlen(device_name);
-    fields.name_is_complete = 1;
-
-    rc = ble_gap_adv_set_fields(&fields);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "error setting advertisement data; rc=%d\n", rc);
-        return;
+    void start() {
+        xTaskCreatePinnedToCore([](void* arg) {
+            auto& s = *static_cast<Session*>(arg);
+            s.mResult = s.run();
+            xEventGroupSetBits(s.mEvents, kEvDone);
+            vTaskDelete(nullptr);
+        }, "ble", 4096, this, 5, nullptr, tskNO_AFFINITY);
     }
+    void join() { xEventGroupWaitBits(mEvents, kEvDone, pdFALSE, pdTRUE, portMAX_DELAY); }
 
-    /* Begin advertising */
-    memset(&adv_params, 0, sizeof(adv_params));
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
-    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    rc = ble_gap_adv_start(blehr_addr_type, NULL, BLE_HS_FOREVER,
-                           &adv_params, blehr_gap_event, NULL);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "error enabling advertisement; rc=%d\n", rc);
-        return;
-    }
-}
+private:
+    int64_t mStartUs {esp_timer_get_time()};
+    int64_t mDeadlineUs {0};
+    bool mStackUp {false}, mHostUp {false};
+    uint8_t mOwnAddrType {0};
+    uint8_t mAdvFlags {0};
+    bool mConnecting {false};
+    uint16_t mConn {BLE_HS_CONN_HANDLE_NONE};
+    uint16_t mMtu {BLE_ATT_MTU_DFLT};
+    int mStatus {0}; // Of the last connect/encrypt/GATT step
+    const char* mStep {"start"}; // Where the session is, for the log when it fails
+    uint16_t mSvcStart {0}, mSvcEnd {0};
+    std::vector<uint8_t> mRead;
 
-static void
-blehr_tx_hrate_stop(void)
-{
-    xTimerStop( blehr_tx_timer, 1000 / portTICK_PERIOD_MS );
-}
+    static inline Session* sActive {nullptr};
 
-/* Reset heart rate measurement */
-static void
-blehr_tx_hrate_reset(void)
-{
-    int rc;
+    int ms() const { return (esp_timer_get_time() - mStartUs) / 1000; }
 
-    if (xTimerReset(blehr_tx_timer, 1000 / portTICK_PERIOD_MS ) == pdPASS) {
-        rc = 0;
-    } else {
-        rc = 1;
-    }
-
-    assert(rc == 0);
-
-}
-
-/* This function simulates heart beat and notifies it to the client */
-static void
-blehr_tx_hrate(TimerHandle_t ev)
-{
-    static uint8_t hrm[2];
-    int rc;
-    struct os_mbuf *om;
-
-    if (!notify_state) {
-        blehr_tx_hrate_stop();
-        heartrate = 90;
-        return;
-    }
-
-    hrm[0] = 0x06; /* contact of a sensor */
-    hrm[1] = heartrate; /* storing dummy data */
-
-    /* Simulation of heart beats */
-    heartrate++;
-    if (heartrate == 160) {
-        heartrate = 90;
-    }
-
-    om = ble_hs_mbuf_from_flat(hrm, sizeof(hrm));
-    rc = ble_gatts_notify_custom(conn_handle, hrs_hrm_handle, om);
-
-    assert(rc == 0);
-
-    blehr_tx_hrate_reset();
-}
-
-static int
-blehr_gap_event(struct ble_gap_event *event, void *arg)
-{
-    switch (event->type) {
-    case BLE_GAP_EVENT_CONNECT:
-        /* A new connection was established or a connection attempt failed */
-        ESP_LOGE(TAG, "connection %s; status=%d",
-                    event->connect.status == 0 ? "established" : "failed",
-                    event->connect.status);
-
-        if (event->connect.status != 0) {
-            /* Connection failed; resume advertising */
-            blehr_advertise();
+    // Waits for any of `bits` until the deadline. Fails early on BACK, on a lost
+    // link and, while searching, when the caller gives up
+    bool wait(EventBits_t bits, int64_t deadlineUs, bool searching = false) {
+        while (true) {
+            const auto now = esp_timer_get_time();
+            if (now >= deadlineUs)
+                return false;
+            const auto slice = std::min<int64_t>(deadlineUs - now, 50'000);
+            const auto got = xEventGroupWaitBits(mEvents, bits | kEvDisconnected, pdFALSE, pdFALSE,
+                                                 pdMS_TO_TICKS(slice / 1000) + 1);
+            if (got & bits) {
+                xEventGroupClearBits(mEvents, bits);
+                return true;
+            }
+            if (got & kEvDisconnected)
+                return false;
+            if (mCancel && *mCancel) {
+                mResult = BleResult::Cancelled;
+                return false;
+            }
+            if (searching && mGiveUp)
+                return false;
         }
-        conn_handle = event->connect.conn_handle;
-        break;
+    }
+    int64_t step() const { return std::min(esp_timer_get_time() + kStepUs, mDeadlineUs); }
 
-    case BLE_GAP_EVENT_DISCONNECT:
-        ESP_LOGE(TAG, "disconnect; reason=%d", event->disconnect.reason);
+    bool startStack() {
+        initNvs(); // PHY calibration data; without it the radio still works, slower
+        if (nimble_port_init() != ESP_OK)
+            return false;
+        mStackUp = true;
 
-        /* Connection terminated; resume advertising */
-        blehr_advertise();
-        break;
+        sActive = this;
+        ble_hs_cfg.sync_cb = [] { xEventGroupSetBits(sActive->mEvents, kEvSynced); };
+        ble_hs_cfg.reset_cb = [](int reason) { ESP_LOGE(TAG, "host reset %d", reason); };
+        ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+        // The watch shows the code, the phone asks for it
+        ble_hs_cfg.sm_io_cap = BLE_HS_IO_DISPLAY_ONLY;
+        ble_hs_cfg.sm_bonding = 1;
+        ble_hs_cfg.sm_mitm = 1;
+        ble_hs_cfg.sm_sc = 1;
+        ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+        ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+        ble_store_config_init(); // RAM only: the key that matters is saved in BlePeer
 
-    case BLE_GAP_EVENT_ADV_COMPLETE:
-        ESP_LOGE(TAG, "adv complete");
-        blehr_advertise();
-        break;
+        nimble_port_freertos_init([](void*) {
+            nimble_port_run(); // Until nimble_port_stop()
+            nimble_port_freertos_deinit();
+        });
+        mHostUp = true;
+        if (!wait(kEvSynced, esp_timer_get_time() + 1'000'000))
+            return false;
+        mTSynced = ms();
+        return ble_hs_id_infer_auto(0, &mOwnAddrType) == 0;
+    }
 
-    case BLE_GAP_EVENT_SUBSCRIBE:
-        ESP_LOGE(TAG, "subscribe event; cur_notify=%d\n value handle; "
-                    "val_handle=%d",
-                    event->subscribe.cur_notify, hrs_hrm_handle);
-        if (event->subscribe.attr_handle == hrs_hrm_handle) {
-            notify_state = event->subscribe.cur_notify;
-            blehr_tx_hrate_reset();
-        } else if (event->subscribe.attr_handle != hrs_hrm_handle) {
-            notify_state = event->subscribe.cur_notify;
-            blehr_tx_hrate_stop();
+    void stopStack() {
+        if (mHostUp)
+            nimble_port_stop();
+        if (mStackUp)
+            nimble_port_deinit();
+        sActive = nullptr;
+    }
+
+    bool needConnect() const {
+        return mMode != Mode::Auto || mSendValues || mSendSchema || mStale
+            || (mAdvFlags & (kPending | kWantState | kWantSchema));
+    }
+
+    static int onGap(ble_gap_event* e, void* arg) {
+        auto& s = *static_cast<Session*>(arg);
+        switch (e->type) {
+        case BLE_GAP_EVENT_DISC:
+            s.onAdvertisement(e->disc);
+            break;
+        case BLE_GAP_EVENT_CONNECT:
+            s.mStatus = e->connect.status;
+            if (e->connect.status == 0)
+                s.mConn = e->connect.conn_handle;
+            xEventGroupSetBits(s.mEvents, kEvConnected);
+            break;
+        case BLE_GAP_EVENT_DISCONNECT:
+            s.mConn = BLE_HS_CONN_HANDLE_NONE;
+            xEventGroupSetBits(s.mEvents, kEvDisconnected);
+            break;
+        case BLE_GAP_EVENT_ENC_CHANGE:
+            s.mStatus = e->enc_change.status;
+            xEventGroupSetBits(s.mEvents, kEvEncrypted);
+            break;
+        case BLE_GAP_EVENT_PASSKEY_ACTION:
+            if (e->passkey.params.action == BLE_SM_IOACT_DISP && s.mMode == Mode::Pair) {
+                ble_sm_io io{};
+                io.action = BLE_SM_IOACT_DISP;
+                io.passkey = esp_random() % 1'000'000;
+                ble_sm_inject_io(e->passkey.conn_handle, &io);
+                if (s.mShowCode)
+                    s.mShowCode(io.passkey);
+            }
+            break;
+        case BLE_GAP_EVENT_REPEAT_PAIRING: {
+            // Only reached when pairing again within a session: drop the old keys
+            ble_gap_conn_desc desc;
+            if (ble_gap_conn_find(e->repeat_pairing.conn_handle, &desc) == 0)
+                ble_store_util_delete_peer(&desc.peer_id_addr);
+            return BLE_GAP_REPEAT_PAIRING_RETRY;
         }
-        ESP_LOGI("BLE_GAP_SUBSCRIBE_EVENT", "conn_handle from subscribe=%d", conn_handle);
-        break;
-
-    case BLE_GAP_EVENT_MTU:
-        ESP_LOGE(TAG, "mtu update event; conn_handle=%d mtu=%d\n",
-                    event->mtu.conn_handle,
-                    event->mtu.value);
-        break;
-
+        default:
+            break;
+        }
+        return 0;
     }
 
-    return 0;
-}
+    void onAdvertisement(const ble_gap_disc_desc& d) {
+        if (mFound || d.event_type != BLE_HCI_ADV_RPT_EVTYPE_ADV_IND)
+            return;
+        ble_hs_adv_fields f;
+        if (ble_hs_adv_parse_fields(&f, d.data, d.length_data) != 0 || f.mfg_data_len < kAdvLen)
+            return;
+        const auto* m = f.mfg_data;
+        if (m[0] != 0xFF || m[1] != 0xFF || m[2] != 'L' || m[3] != 'K' || m[4] != kProto)
+            return;
+        const uint8_t flags = m[5];
+        const uint32_t token = get32(m + 6);
+        if (mMode == Mode::Pair ? !(flags & kPairing)
+                                : (flags & kPairing) || !mPeer || token != mPeer->mToken)
+            return;
 
-static void blehr_on_sync(void)
-{
-    int rc;
-
-    rc = ble_hs_id_infer_auto(0, &blehr_addr_type);
-    assert(rc == 0);
-
-    uint8_t a[6] = {0};
-    rc = ble_hs_id_copy_addr(blehr_addr_type, a, NULL);
-
-    ESP_LOGE(TAG, "Device Address: %x:%x:%x:%x:%x:%x", a[0], a[1], a[2], a[3], a[4], a[5]);
-
-    /* Begin advertising */
-    blehr_advertise();
-}
-
-static void blehr_on_reset(int reason)
-{
-    ESP_LOGE(TAG, "Resetting state; reason=%d", reason);
-}
-
-void blehr_host_task(void *param)
-{
-    ESP_LOGI(TAG, "BLE Host Task Started");
-    /* This function will return only when nimble_port_stop() is executed */
-    nimble_port_run();
-
-    nimble_port_freertos_deinit();
-}
-
-void ble_main(void)
-{
-    int rc;
-
-    /* Initialize NVS — it is used to store PHY calibration data */
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+        mFound = true;
+        mAdvFlags = flags;
+        mTFound = ms();
+        ble_gap_disc_cancel();
+        // Connect right from here, the next advertising event is already counting
+        if (needConnect()) {
+            ble_gap_conn_params p{};
+            p.scan_itvl = p.scan_window = 48; // 30 ms, continuous
+            p.itvl_min = 6;                   // 7.5 ms: few round trips, done quickly
+            p.itvl_max = 12;
+            p.latency = 0;
+            p.supervision_timeout = 50; // 500 ms
+            mStatus = ble_gap_connect(mOwnAddrType, &d.addr, kConnectMs, &p, onGap, this);
+            mConnecting = mStatus == 0;
+        }
+        xEventGroupSetBits(mEvents, kEvFound);
     }
-    ESP_ERROR_CHECK(ret);
 
-    ret = nimble_port_init();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init nimble %d", ret);
+    // GATT callbacks: each procedure ends with one kEvGatt, status in mStatus
+    void gattDone(int status) {
+        mStatus = status == BLE_HS_EDONE ? 0 : status;
+        xEventGroupSetBits(mEvents, kEvGatt);
+    }
+    bool gatt(int rc) {
+        if (rc != 0) {
+            mStatus = rc;
+            return false;
+        }
+        return wait(kEvGatt, step()) && mStatus == 0;
+    }
+
+    bool findHandles() {
+        mSvcStart = 0;
+        auto svcCb = [](uint16_t, const ble_gatt_error* err, const ble_gatt_svc* svc, void* arg) {
+            auto& s = *static_cast<Session*>(arg);
+            if (err->status == 0 && svc && !s.mSvcStart) {
+                s.mSvcStart = svc->start_handle;
+                s.mSvcEnd = svc->end_handle;
+            } else if (err->status != 0) {
+                s.gattDone(err->status);
+            }
+            return 0;
+        };
+        if (!gatt(ble_gattc_disc_svc_by_uuid(mConn, &kServiceUuid.u, svcCb, this)) || !mSvcStart)
+            return false;
+        // Android numbers a service's attributes in a row: same start, same handles
+        if (mHandles.mService == mSvcStart && mHandles.mState && mHandles.mPending && mHandles.mSchema)
+            return true;
+
+        mHandles = {.mService = mSvcStart};
+        auto chrCb = [](uint16_t, const ble_gatt_error* err, const ble_gatt_chr* chr, void* arg) {
+            auto& s = *static_cast<Session*>(arg);
+            if (err->status == 0 && chr) {
+                if (ble_uuid_cmp(&chr->uuid.u, &kStateUuid.u) == 0)
+                    s.mHandles.mState = chr->val_handle;
+                else if (ble_uuid_cmp(&chr->uuid.u, &kPendingUuid.u) == 0)
+                    s.mHandles.mPending = chr->val_handle;
+                else if (ble_uuid_cmp(&chr->uuid.u, &kSchemaUuid.u) == 0)
+                    s.mHandles.mSchema = chr->val_handle;
+            } else if (err->status != 0) {
+                s.gattDone(err->status);
+            }
+            return 0;
+        };
+        return gatt(ble_gattc_disc_all_chrs(mConn, mSvcStart, mSvcEnd, chrCb, this))
+            && mHandles.mState && mHandles.mPending && mHandles.mSchema;
+    }
+
+    bool read(uint16_t handle) {
+        mRead.clear();
+        auto cb = [](uint16_t, const ble_gatt_error* err, ble_gatt_attr* attr, void* arg) {
+            auto& s = *static_cast<Session*>(arg);
+            if (err->status == 0 && attr) {
+                const auto len = OS_MBUF_PKTLEN(attr->om);
+                const auto at = s.mRead.size();
+                s.mRead.resize(at + len);
+                os_mbuf_copydata(attr->om, 0, len, s.mRead.data() + at);
+            } else if (err->status != 0) {
+                s.gattDone(err->status);
+            }
+            return 0;
+        };
+        return gatt(ble_gattc_read_long(mConn, handle, 0, cb, this));
+    }
+
+    // Plain writes of (offset u16, total u16, data) pieces, the app joins them. ATT long
+    // writes aborted on a Galaxy (Android 17): its echo of the second prepared piece
+    // didn't pass NimBLE's check
+    bool write(uint16_t handle, const std::vector<uint8_t>& data) {
+        auto cb = [](uint16_t, const ble_gatt_error* err, ble_gatt_attr*, void* arg) {
+            static_cast<Session*>(arg)->gattDone(err->status);
+            return 0;
+        };
+        const size_t room = mMtu - 3u - 4u;
+        size_t at = 0;
+        std::vector<uint8_t> piece;
+        do {
+            const size_t n = std::min(room, data.size() - at);
+            piece.clear();
+            put16(piece, at);
+            put16(piece, data.size());
+            piece.insert(piece.end(), data.begin() + at, data.begin() + at + n);
+            if (!gatt(ble_gattc_write_flat(mConn, handle, piece.data(), piece.size(), cb, this)))
+                return false;
+            at += n;
+        } while (at < data.size());
+        return true;
+    }
+
+    // Keys of the bond that was just made, for the next sessions
+    bool keepBond() {
+        ble_gap_conn_desc desc;
+        if (ble_gap_conn_find(mConn, &desc) != 0)
+            return false;
+        ble_store_key_sec key{};
+        key.peer_addr = desc.peer_id_addr;
+        ble_store_value_sec sec{};
+        if ((ble_store_read_peer_sec(&key, &sec) != 0 || !sec.ltk_present)
+            && (ble_store_read_our_sec(&key, &sec) != 0 || !sec.ltk_present))
+            return false;
+        auto& p = mNewPeer.emplace();
+        do {
+            p.mToken = esp_random();
+        } while (p.mToken == 0);
+        p.mAddr[0] = desc.peer_id_addr.type;
+        std::copy_n(desc.peer_id_addr.val, 6, p.mAddr.begin() + 1);
+        std::copy_n(sec.ltk, 16, p.mLtk.begin());
+        p.mRand = sec.rand_num;
+        p.mEdiv = sec.ediv;
+        p.mKeySize = sec.key_size;
+        p.mAuthenticated = sec.authenticated;
+        mPeer = mNewPeer;
+        return true;
+    }
+
+    std::vector<uint8_t> state(uint16_t ackRev) const {
+        std::vector<uint8_t> out;
+        out.reserve(20 + mValues.size());
+        out.push_back(kProto);
+        out.push_back(mMode == Mode::Pair ? kJustPaired : 0);
+        put32(out, mPeer->mToken);
+        put32(out, mSchemaHash);
+        put16(out, ackRev);
+        put16(out, mBatteryMv);
+        put16(out, mBatteryPermille);
+        put32(out, mNow);
+        out.insert(out.end(), mValues.begin(), mValues.end());
+        return out;
+    }
+
+    BleResult talk() {
+        mDeadlineUs = mStartUs + (mMode == Mode::Auto ? kAutoMaxUs
+                                  : mMode == Mode::Manual ? kManualMaxUs : kPairFindUs);
+
+        // 1. Search the phone. Continuous passive scan: the phone advertises every 100 ms
+        mStep = "scan";
+        ble_gap_disc_params disc{};
+        disc.itvl = disc.window = 48; // 30 ms
+        disc.passive = 1;
+        disc.filter_duplicates = 1;
+        if (ble_gap_disc(mOwnAddrType, BLE_HS_FOREVER, &disc, onGap, this) != 0)
+            return BleResult::Failed;
+        if (!wait(kEvFound, mDeadlineUs, true)) {
+            ble_gap_disc_cancel();
+            return mResult == BleResult::Cancelled ? mResult : BleResult::NoPhone;
+        }
+        if (!mConnecting)
+            return needConnect() ? BleResult::Failed : BleResult::Seen;
+
+        // 2. Connect, the phone is there: the cap applies from now on, not the refresh
+        mStep = "connect";
+        if (!wait(kEvConnected, esp_timer_get_time() + kConnectMs * 1000 + 100'000) || mStatus != 0)
+            return BleResult::Failed;
+        mTConnected = ms();
+        if (mMode == Mode::Pair)
+            mDeadlineUs = esp_timer_get_time() + kPairCodeUs;
+
+        // 3. MTU exchange runs during the encryption
+        auto mtuCb = [](uint16_t, const ble_gatt_error* err, uint16_t mtu, void* arg) {
+            auto& s = *static_cast<Session*>(arg);
+            if (err->status == 0)
+                s.mMtu = mtu;
+            xEventGroupSetBits(s.mEvents, kEvMtu);
+            return 0;
+        };
+        const bool mtu = ble_gattc_exchange_mtu(mConn, mtuCb, this) == 0;
+
+        // 4. Encrypt: a pairing (the phone asks for the code) or the stored key
+        mStep = "encrypt";
+        const int rc = mMode == Mode::Pair
+            ? ble_gap_security_initiate(mConn)
+            : ble_gap_encryption_initiate(mConn, mPeer->mKeySize, mPeer->mLtk.data(), mPeer->mEdiv,
+                                          mPeer->mRand, mPeer->mAuthenticated);
+        if (rc != 0 || !wait(kEvEncrypted, mMode == Mode::Pair ? mDeadlineUs : step()))
+            return mResult == BleResult::Cancelled ? mResult : BleResult::Failed;
+        if (mStatus != 0) {
+            // The phone lost its key (forgotten in Android's settings)
+            return mStatus == BLE_HS_HCI_ERR(BLE_ERR_PINKEY_MISSING) && mMode != Mode::Pair
+                ? BleResult::NeedsPair : BleResult::Failed;
+        }
+        mTEncrypted = ms();
+        if (mMode == Mode::Pair) {
+            mStep = "bond";
+            if (!keepBond())
+                return BleResult::Failed;
+            mDeadlineUs = esp_timer_get_time() + kManualMaxUs;
+        }
+        if (mtu)
+            wait(kEvMtu, step());
+
+        // 5. Exchange
+        mStep = "discover";
+        if (!findHandles())
+            return BleResult::Failed;
+        uint16_t ackRev = 0;
+        if (mAdvFlags & kPending) {
+            mStep = "read";
+            if (!read(mHandles.mPending) || mRead.size() < 3 || mRead[0] != kProto)
+                return BleResult::Failed;
+            ackRev = mRead[1] | mRead[2] << 8;
+            mChanges.assign(mRead.begin() + 3, mRead.end());
+            // Send the values as they will be once applied
+            RemoteSettings::overlay(mValues, mChanges);
+        }
+        if (mSendSchema || (mAdvFlags & kWantSchema)) {
+            mStep = "schema";
+            if (!write(mHandles.mSchema, mSchema))
+                return BleResult::Failed;
+            mSchemaSent = true;
+        }
+        mStep = "state";
+        if (!write(mHandles.mState, state(ackRev)))
+            return BleResult::Failed;
+        mValuesSent = true;
+        return BleResult::Synced;
+    }
+
+    BleResult run() {
+        Power::Lock power(Power::Flag::BT);
+        auto result = startStack() ? talk() : BleResult::Failed;
+        if (mConn != BLE_HS_CONN_HANDLE_NONE) {
+            ble_gap_terminate(mConn, BLE_ERR_REM_USER_CONN_TERM);
+            wait(kEvDisconnected, esp_timer_get_time() + 200'000);
+        }
+        stopStack();
+        mTDone = ms();
+        if constexpr (kLogSessions) {
+            ESP_LOGE(TAG, "%s sync %d found %d conn %d enc %d done %d ms",
+                     std::string(magic_enum::enum_name(result)).c_str(),
+                     mTSynced, mTFound, mTConnected, mTEncrypted, mTDone);
+            if (result == BleResult::Failed || result == BleResult::NeedsPair)
+                ESP_LOGE(TAG, "failed at %s, status %d", mStep, mStatus);
+        }
+        return result;
+    }
+};
+
+namespace {
+
+time_t interval(SyncEvery every) {
+    switch (every) {
+    case _5min: return 5 * 60;
+    case _15min: return 15 * 60;
+    case _1h: return 3600;
+    case _6h: return 6 * 3600;
+    case Off: default: return 0;
+    }
+}
+
+// What the phone should get from this session
+void prepare(Session& s) {
+    auto& ble = kSettings.mBle;
+    s.mPeer = ble.mPeer;
+    s.mHandles = ble.mHandles;
+    s.mValues = RemoteSettings::values();
+    s.mSchema = RemoteSettings::schema();
+    s.mSchemaHash = RemoteSettings::hash(s.mSchema);
+    const bool pair = s.mMode == Mode::Pair;
+    s.mSendValues = pair || RemoteSettings::hash(s.mValues) != ble.mSentValues;
+    s.mSendSchema = pair || s.mSchemaHash != ble.mSentSchema;
+    s.mStale = s.mNow - ble.mLastSync >= kRefreshEvery;
+}
+
+// Back in the caller's task: record the outcome, apply the app's changes
+bool commit(Session& s) {
+    auto& ble = kSettings.mBle;
+    if (s.mMode == Mode::Pair) {
+        // A failed attempt leaves the old pairing as it was
+        if (!s.mNewPeer || s.mResult != BleResult::Synced)
+            return false;
+        BleSettings fresh;
+        fresh.mEvery = ble.mEvery;
+        ble = fresh;
+        ble.mPeer = s.mNewPeer;
+        savePeer(ble.mPeer);
+    }
+    ble.mLastTry = s.mNow;
+    if (s.mFound)
+        ble.mLastSeen = s.mNow;
+    ble.mResult = s.mResult;
+    ble.mHandles = s.mHandles;
+    const bool changed = RemoteSettings::apply(s.mChanges);
+    if (s.mValuesSent)
+        ble.mSentValues = RemoteSettings::hash(s.mValues);
+    if (s.mSchemaSent)
+        ble.mSentSchema = s.mSchemaHash;
+    if (s.mResult == BleResult::Synced)
+        ble.mLastSync = s.mNow;
+    return changed;
+}
+
+} // namespace
+
+void load() {
+    nvs_handle_t h;
+    if (!initNvs() || nvs_open(kNvsNamespace, NVS_READONLY, &h) != ESP_OK)
         return;
-    }
-
-    /* Initialize the NimBLE host configuration */
-    ble_hs_cfg.sync_cb = blehr_on_sync;
-    ble_hs_cfg.reset_cb = blehr_on_reset;
-
-    /* name, period/time,  auto reload, timer ID, callback */
-    blehr_tx_timer = xTimerCreate("blehr_tx_timer", pdMS_TO_TICKS(1000), pdTRUE, (void *)0, blehr_tx_hrate);
-
-    rc = gatt_svr_init();
-    assert(rc == 0);
-
-    /* Set the default device name */
-    rc = ble_svc_gap_device_name_set(device_name);
-    assert(rc == 0);
-
-    /* Start the task */
-    nimble_port_freertos_init(blehr_host_task);
+    BlePeer peer;
+    size_t size = sizeof(peer);
+    if (nvs_get_blob(h, kNvsPeer, &peer, &size) == ESP_OK && size == sizeof(peer))
+        kSettings.mBle.mPeer = peer;
+    nvs_close(h);
 }
+
+bool due(time_t now) {
+    const auto& ble = kSettings.mBle;
+    const auto every = interval(ble.mEvery);
+    if (!ble.mPeer || !every)
+        return false;
+    // A minute of slack: the hourly wake lands a few ms short of the hour
+    return now < ble.mLastTry || now - ble.mLastTry >= every - 60;
+}
+
+std::optional<uint32_t> nextSyncIn(time_t now) {
+    const auto& ble = kSettings.mBle;
+    const auto every = interval(ble.mEvery);
+    if (!ble.mPeer || !every || every >= 3600)
+        return std::nullopt;
+    const auto left = ble.mLastTry + every - now;
+    return std::max<time_t>(60, std::min<time_t>(left, every));
+}
+
+Sync::Sync(const Watch& watch) : mSession(std::make_unique<Session>(Mode::Auto, watch)) {
+    prepare(*mSession);
+    mSession->start();
+}
+
+Sync::~Sync() {
+    if (!mFinished)
+        finish();
+}
+
+bool Sync::finish() {
+    mFinished = true;
+    mSession->mGiveUp = true;
+    mSession->join();
+    return commit(*mSession);
+}
+
+BleResult pair(const Watch& watch, const Cancel& cancel, std::function<void(uint32_t)> showCode) {
+    Session s(Mode::Pair, watch);
+    s.mCancel = &cancel;
+    s.mShowCode = std::move(showCode);
+    prepare(s);
+    s.mHandles = {};
+    s.start();
+    s.join();
+    commit(s);
+    return s.mResult;
+}
+
+BleResult syncNow(const Watch& watch, const Cancel& cancel, bool& changed) {
+    if (!kSettings.mBle.mPeer)
+        return BleResult::NeedsPair;
+    Session s(Mode::Manual, watch);
+    s.mCancel = &cancel;
+    prepare(s);
+    s.start();
+    s.join();
+    changed = commit(s);
+    return s.mResult;
+}
+
+void forget() {
+    BleSettings fresh;
+    fresh.mEvery = kSettings.mBle.mEvery;
+    kSettings.mBle = fresh;
+    savePeer(std::nullopt);
+}
+
+} // namespace Ble

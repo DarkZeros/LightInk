@@ -3,6 +3,7 @@
 
 #include "battery.h"
 #include "beep.h"
+#include "ble.h"
 #include "time.h"
 #include "touch.h"
 #include "watchface.h"
@@ -31,6 +32,7 @@ struct Settings {
     BatterySettings mBattery;
     DisplaySettings mDisplay;
     WatchfaceSettings mWatchface;
+    BleSettings mBle;
 
     struct Power {
         bool mNight {false};

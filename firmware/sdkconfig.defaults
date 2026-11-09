@@ -31,5 +31,13 @@ CONFIG_TOUCH_SUPPRESS_DEPRECATE_WARN=y
 # so the wake timing and power stay comparable with what was measured there.
 CONFIG_FREERTOS_IN_IRAM=y
 
+# Bluetooth (main/ble.cpp): the watch is a BLE central with one link, to the phone.
+# The phone's key is kept by the app code, NimBLE's own store stays in RAM.
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=n
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_MAX_BONDS=1
+CONFIG_BT_NIMBLE_NVS_PERSIST=n
+
 # 6.x turns these into errors. Third party code, Arduino's core included, trips them.
 CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS=y

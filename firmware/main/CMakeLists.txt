@@ -13,6 +13,8 @@ set(requires
     radioLib
     esp_hal_wdt
     esp_hal_touch_sens
+    bt
+    nvs_flash
 )
 
 set(privrequires
@@ -46,8 +48,8 @@ set(srcs
 
     secrets.cpp
 
-    # WIP stuff
-    # ble.cpp
+    ble.cpp
+    remote_settings.cpp
 
     gps.cpp
     radio.cpp

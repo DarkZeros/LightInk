@@ -43,6 +43,10 @@ public:
     void finishTasks();
 
     bool NTPSync();
+    // Bluetooth menu flows, blocking, BACK cancels
+    void pairPhone();
+    void syncPhone();
+    Ble::Watch bleWatch();
 
     Time mTime;
     Battery mBattery;
@@ -57,4 +61,5 @@ public:
     std::optional<UI::Any> mUi; // optional to allow re-generation of complex type
 
     std::optional<uint32_t> mNextUpdate;
+    bool mBleUsed {false}; // A menu flow used the radio, no background sync this wake
 };

@@ -10,6 +10,7 @@
 #include <variant>
 #include <vector>
 
+#include "ble.h"
 #include "display.h"
 #include "touch.h"
 
@@ -208,6 +209,7 @@ using Any = std::variant<
     Loop<DisplayMode>,
     Loop<MeasureRate>,
     Loop<MeasureCycles>,
+    Loop<SyncEvery>,
     Loop<uint8_t>,
     Bool,
     Number,

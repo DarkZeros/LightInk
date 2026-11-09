@@ -8,7 +8,7 @@ LightInk is an ultra-low-power (~2µA idle) E-Ink ESP32 smartwatch that can run 
 
 Three sub-projects live in one git repo:
 - `firmware/` — the ESP32 firmware (ESP-IDF + Arduino-as-a-component, C++23). This is the bulk of the work.
-- `Android/LightInkCompanion/` — a minimal Kotlin BLE companion app that reads/writes watch config as JSON.
+- `android/` — the Kotlin/Jetpack Compose companion app: advertises for the watch, serves its GATT service, edits the watch settings. Build with `./gradlew assembleDebug` (JDK 17–21, Android SDK 34); `./gradlew testDebugUnitTest` checks the wire format.
 - `hardware/` — PCB schematics/BOM (`hardware/pcb/`) and case STLs (`hardware/case/`).
 
 ## Building the firmware
@@ -69,9 +69,9 @@ Menus are a compile-time tree built from `std::variant` (`UI::Any`). Behavior is
 
 Popups show on the menus and on the watchface. On the watchface every frame with a popup is a full one and the wake stub stays off until a button dismisses it; the watchdog only drops a popup when it leaves the menus. From an action, use `kSettings.mUi.popup()` for a final message (shown by the draw at the end of the wake, stays until a button or the watchdog removes it), `Core::progress()` for a step of blocking work (drawn right away), and `Core::runCancellable()` for a long job that BACK can stop.
 
-### BLE companion sync — `main/ble.cpp`
+### Phone sync over BLE — `main/ble.cpp`, `main/remote_settings.cpp`
 
-NimBLE GATT server exposing a JSON config characteristic. Service UUID `4c494748-5449-4e4b-0000-000000000000`, config char `...0001` — these must stay in sync with `Android/.../ble/BleManager.kt`. On a timer wake, if `kSettings.mBlePaired`, `Core` auto-runs `ble_init()/ble_sync()/ble_deinit()`.
+The watch is the BLE **central** (NimBLE), the Android app the peripheral that advertises and hosts the GATT service. `Core::Core()` starts a `Ble::Sync` before `draw()` on timer/touch wakes when `Ble::due()` (paired, `kSettings.mBle.mEvery` elapsed, battery ≥ 10%); `finish()` after the draw gives up unless the phone was heard during the refresh, then applies the app's changes and redraws if any changed. Intervals under an hour (5/15 min) schedule their own full wakes through `Ble::nextSyncIn()` → `setNextUpdate()`; the wake stub never syncs. Advertisement flags let the watch skip the connection when neither side has news. The *Bluetooth* menu has Pair (watch shows a passkey, Android asks for it), Sync now, the auto interval, Forget, and the status. The link key is kept in `BlePeer` (NVS + RTC) and used with `ble_gap_encryption_initiate()`, because Android's rotating address can't be resolved by the ESP32 controller. Settings the app can change are a table in `remote_settings.cpp` (stable ids, never reuse); the app builds its UI from the schema the watch sends. Wire format: `docs/ble_protocol.md`; it must stay in sync with `android/app/src/main/java/com/lightink/companion/Protocol.kt`.
 
 ### Networking
 
