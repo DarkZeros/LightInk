@@ -145,11 +145,7 @@ UI::Any Core::generateMenus() {
         }));
       }},
       UI::Action{"Beep", [&]{
-        mTasks.emplace_back(std::async(std::launch::async, []{
-          Peripherals::speaker(
-            std::vector<std::pair<int,int>>{
-            {3200,100},{0,100},{3200,100}});
-        }));
+        mTasks.emplace_back(std::async(std::launch::async, Peripherals::beep));
       }},
       UI::Action{"Tetris Sound", [&]{
         runCancellable("Playing Tetris\nBACK to cancel", Peripherals::tetris);

@@ -31,6 +31,7 @@ private:
 struct Peripherals {
     static void vibrator(const std::vector<int>&);
     static void speaker(const std::vector<std::pair<int, int>>& pattern);
+    static void beep();
 
     static void tetris(const Cancel& cancel);
 };

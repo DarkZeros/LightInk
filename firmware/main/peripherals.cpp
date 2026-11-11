@@ -168,6 +168,11 @@ void Peripherals::speaker(const std::vector<std::pair<int, int>>& pattern) {
   }
 }
 
+// Hourly chime of the old Casio watches: two equal short beeps at 4096 Hz (32768 / 8)
+void Peripherals::beep() {
+  speaker({{4096, 62}, {0, 62}, {4096, 62}});
+}
+
 
 #define NOTE_B0  31
 #define NOTE_C1  33
