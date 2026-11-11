@@ -92,7 +92,7 @@ object WatchStore {
 
     fun discardPending() = update { it.copy(pending = emptyMap()) }
 
-    fun startPairing() = update(save = false) { it.copy(pairing = true) }
+    fun startPairing() = update { it.copy(pairing = true, pairingAddress = null) }
 
     fun cancelPairing() = update(save = false) { it.copy(pairing = false, codeRequested = false) }
 

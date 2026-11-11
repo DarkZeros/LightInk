@@ -40,7 +40,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -308,10 +307,19 @@ private fun Paired(state: WatchState) {
         )
         TextButton(onClick = WatchStore::discardPending) { Text("Discard changes") }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilledTonalButton(onClick = { startPairing(context, state) }) { Text("Pair again") }
-        OutlinedButton(onClick = { confirmForget = true }) { Text("Forget watch") }
+    // Android can drop its side of the pairing (removed in Bluetooth settings, ...): the
+    // watch can't sync then, and only a new pairing fixes it
+    val bondLost = remember(state.connected, now) { !Bonds.has(context, state.watchAddress) }
+    if (bondLost) {
+        Text(
+            "Android no longer has the Bluetooth pairing with the watch, so it can't sync. " +
+                "Forget the watch here and on the watch (Bluetooth › Forget phone), then pair again.",
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
+    // Pairing again goes through Forget, here and on the watch: both sides start clean
+    OutlinedButton(onClick = { confirmForget = true }) { Text("Forget watch") }
 
     if (confirmForget) {
         AlertDialog(

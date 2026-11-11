@@ -62,8 +62,9 @@ class SyncService : Service() {
     private val assemblers = HashMap<Pair<String, UUID>, Protocol.Assembler>()
     // A long read must see the same value for every offset
     private var pendingServed: ByteArray? = null
-    // The watch connected to the GATT server, to recognise its pairing request
-    @Volatile private var connectedAddress: String? = null
+    // Devices connected to the GATT server, to recognise the watch's pairing request.
+    // Android reports every LE link of the phone here (headphones, ...), not only the watch
+    private val connectedAddresses = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var foreground = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -139,10 +140,12 @@ class SyncService : Service() {
                 BluetoothDevice.ACTION_PAIRING_REQUEST -> {
                     val variant = intent.getIntExtra(BluetoothDevice.EXTRA_PAIRING_VARIANT, -1)
                     // The watch's passkey arrives as the PIN variant, which setPin() answers
-                    if (!WatchStore.state.value.pairing || device.address != connectedAddress ||
+                    if (!WatchStore.state.value.pairing || device.address !in connectedAddresses ||
                         variant != BluetoothDevice.PAIRING_VARIANT_PIN
                     ) return
                     if (isOrderedBroadcast) abortBroadcast()
+                    // A pairing that fails halfway leaves a bond: remember whose, to drop it
+                    WatchStore.setPairingAddress(device.address)
                     PairingCode.device = device
                     WatchStore.setCodeRequested(true)
                 }
@@ -180,6 +183,7 @@ class SyncService : Service() {
         advertisingFast = null
         server?.close()
         server = null
+        connectedAddresses.clear()
     }
 
     // --- Advertising -------------------------------------------------------------------
@@ -265,14 +269,14 @@ class SyncService : Service() {
         @Synchronized
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             val connected = newState == BluetoothProfile.STATE_CONNECTED
-            connectedAddress = if (connected) device.address else null
-            // A pairing that fails halfway leaves a bond: remember whose, to drop it
-            if (connected && WatchStore.state.value.pairing) WatchStore.setPairingAddress(device.address)
+            if (connected) connectedAddresses += device.address else connectedAddresses -= device.address
             if (!connected) {
                 assemblers.keys.removeAll { it.first == device.address }
                 pendingServed = null
             }
-            WatchStore.setConnected(connected)
+            // "Syncing…" is about the watch, whose address is known once paired
+            val watch = WatchStore.state.value.watchAddress
+            if (watch == null || device.address == watch) WatchStore.setConnected(connected)
         }
 
         @Synchronized
