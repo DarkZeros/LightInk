@@ -78,7 +78,7 @@ const char* bleMessage(BleResult result) {
   case BleResult::Synced: return "Synced";
   case BleResult::Seen: return "Phone seen\nnothing new";
   case BleResult::NoPhone: return "Phone not\nfound\nIs the app\nrunning?";
-  case BleResult::NeedsPair: return "Phone lost\nthe pairing\nPair again";
+  case BleResult::NeedsPair: return "Phone lost\nthe pairing\nForget phone\nand pair again";
   case BleResult::Cancelled: return "Cancelled";
   default: return "Bluetooth\nfailed";
   }
@@ -230,14 +230,16 @@ UI::Any Core::generateMenus() {
       UI::Loop<MeasureRate>{"Watch Rate", kSettings.mTouch.mRate[1]},
     }},
     UI::Menu{"Bluetooth", {
-      UI::Action{kSettings.mBle.mPeer ? "Pair again" : "Pair phone", [&]{ pairPhone(); }},
+      // One entry: pairing again starts from a clean state on both sides
+      kSettings.mBle.mPeer
+        ? UI::Action{"Forget phone", [&]{
+            Ble::forget();
+            kSettings.mUi.popup("Phone\nforgotten\nForget the\nwatch in the\napp as well");
+            regenerateMenus();
+          }}
+        : UI::Action{"Pair phone", [&]{ pairPhone(); }},
       UI::Action{"Sync now", [&]{ syncPhone(); }},
       UI::Loop<SyncEvery>{"Auto", kSettings.mBle.mEvery},
-      UI::Action{"Forget phone", [&]{
-        Ble::forget();
-        kSettings.mUi.popup("Phone\nforgotten");
-        regenerateMenus();
-      }},
       UI::Text{[&]{ return bleStatus(mTime); }},
     }},
     UI::Menu{"Radio", buildRadios()},

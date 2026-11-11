@@ -211,6 +211,7 @@ private:
         ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
         ble_store_config_init(); // RAM only: the key that matters is saved in BlePeer
+        ble_store_clear();       // Nothing from an earlier session of this wake
         // Name ("LightInk") and appearance (watch) for Android, which reads them after
         // pairing and shows the MAC without them
         ble_svc_gap_init();
@@ -247,8 +248,10 @@ private:
             break;
         case BLE_GAP_EVENT_CONNECT:
             s.mStatus = e->connect.status;
-            if (e->connect.status == 0)
+            if (e->connect.status == 0) {
                 s.mConn = e->connect.conn_handle;
+                s.knowKey();
+            }
             xEventGroupSetBits(s.mEvents, kEvConnected);
             break;
         case BLE_GAP_EVENT_DISCONNECT:
@@ -411,6 +414,26 @@ private:
         return true;
     }
 
+    // Hands the stored key to NimBLE for this connection, before any packet of it is
+    // handled. With no key in its store NimBLE answers a security request of the phone
+    // with a new pairing: Android then asks for a code and drops its bond when the
+    // watch hangs up. Only the Pair menu may pair
+    void knowKey() {
+        ble_gap_conn_desc desc;
+        if (mMode == Mode::Pair || !mPeer || ble_gap_conn_find(mConn, &desc) != 0)
+            return;
+        ble_store_value_sec sec{};
+        sec.peer_addr = desc.peer_id_addr; // The phone's address of the day, not resolved
+        sec.key_size = mPeer->mKeySize;
+        sec.ediv = mPeer->mEdiv;
+        sec.rand_num = mPeer->mRand;
+        std::copy_n(mPeer->mLtk.begin(), 16, sec.ltk);
+        sec.ltk_present = 1;
+        sec.authenticated = mPeer->mAuthenticated;
+        sec.sc = 1;
+        ble_store_write_peer_sec(&sec);
+    }
+
     // Keys of the bond that was just made, for the next sessions
     bool keepBond() {
         ble_gap_conn_desc desc;
@@ -498,7 +521,8 @@ private:
         if (rc != 0 || !wait(kEvEncrypted, mMode == Mode::Pair ? mDeadlineUs : step()))
             return mResult == BleResult::Cancelled ? mResult : BleResult::Failed;
         if (mStatus != 0) {
-            // The phone lost its key (forgotten in Android's settings)
+            // The phone lost its key (forgotten in Android's settings). Reported only
+            // because NimBLE's own new pairing on this error is off (main/CMakeLists.txt)
             return mStatus == BLE_HS_HCI_ERR(BLE_ERR_PINKEY_MISSING) && mMode != Mode::Pair
                 ? BleResult::NeedsPair : BleResult::Failed;
         }

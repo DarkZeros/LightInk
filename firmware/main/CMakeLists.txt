@@ -68,3 +68,9 @@ target_compile_options(${COMPONENT_TARGET} PRIVATE
     -Wno-volatile
     -fpermissive
 )
+
+# NimBLE (as central) starts a pairing by itself when the phone answers "key missing".
+# Only the Pair menu may pair: a sync then ends with NeedsPair, and Android isn't asked
+# for a code by every sync. The option has no Kconfig entry
+idf_component_get_property(bt_lib bt COMPONENT_LIB)
+target_compile_definitions(${bt_lib} PRIVATE MYNEWT_VAL_BLE_RESTART_PAIR=0)

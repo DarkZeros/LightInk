@@ -73,10 +73,24 @@ bonding the watch writes `SCHEMA` and `STATE` with the `JUST_PAIRED` flag and a 
 token, which the app adopts.
 
 Android refuses to pair again with a device it still has a bond with. Before pairing,
-and on *Forget watch*, the app removes the phone's bond with the watch (and with any
-watch seen during a pairing that failed halfway) through the hidden
+and on *Forget watch*, the app removes the phone's bond with the watch through the hidden
 `BluetoothDevice.removeBond()`; where a phone refuses that, Forget opens Bluetooth
-settings instead.
+settings instead. The bond of a pairing that failed halfway is removed too, but only for
+the device that sent the pairing request and calls itself `LightInk`: the GATT server
+callbacks report every LE link of the phone (headphones, ...), never trust those.
+
+Pairing again goes through forgetting first, on both sides: the watch menu shows *Pair
+phone* or *Forget phone*, the app *Pair watch* or *Forget watch*.
+
+Only the Pair menu may pair. Android, as a bonded peripheral, sends an SMP security
+request on each connection. NimBLE's key store is RAM only and empty on a sync, and with
+no key there NimBLE answers the request with a new pairing, even on a link the watch
+already encrypted with the saved key: Android then shows a pairing request, and deletes
+its bond when the watch hangs up at the end of the sync (measured 2026-11-11, on the first
+sync after pairing). So the session writes the saved key into NimBLE's store when the
+link comes up, and NimBLE's own pairing on "key missing" is off
+(`MYNEWT_VAL_BLE_RESTART_PAIR=0`, `main/CMakeLists.txt`): a phone without the bond ends
+the sync with `NeedsPair`, nothing is asked on the phone.
 
 The watch has no advertising, but it serves a GAP service (`ble_svc_gap`, name
 `LightInk`, appearance 0x00C0 watch) so Android shows its name instead of its MAC. That
