@@ -289,9 +289,12 @@ private fun Paired(state: WatchState) {
         Text("Watch paired", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
         if (state.connected) Text("Syncing…", color = MaterialTheme.colorScheme.primary)
     }
-    val lastSync = if (state.lastSync == 0L) "not yet"
-    else DateUtils.getRelativeTimeSpanString(state.lastSync, now, DateUtils.MINUTE_IN_MILLIS).toString()
-    Text("Last sync: $lastSync", style = MaterialTheme.typography.bodyMedium)
+    fun ago(time: Long) = if (time == 0L) "not yet"
+    else DateUtils.getRelativeTimeSpanString(time, now, DateUtils.MINUTE_IN_MILLIS).toString()
+    Text("Last sync: ${ago(state.lastSync)}", style = MaterialTheme.typography.bodyMedium)
+    // When the watch last connected, also if the sync then failed. Its attempts that
+    // find nothing new don't connect (only the watch knows of them), so they aren't here
+    Text("Last seen: ${ago(state.lastSeen)}", style = MaterialTheme.typography.bodyMedium)
     if (state.batteryMv > 0) {
         Text(
             "Battery: %d %% (%.2f V)".format(state.batteryPermille / 10, state.batteryMv / 1000f),

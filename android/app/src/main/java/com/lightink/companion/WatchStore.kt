@@ -20,6 +20,7 @@ data class WatchState(
     val pending: Map<Int, Pending> = emptyMap(),
     val rev: Int = 0,
     val lastSync: Long = 0, // ms since epoch
+    val lastSeen: Long = 0, // The watch connected, whether the sync then worked or not
     val batteryMv: Int = 0,
     val batteryPermille: Int = 0,
     val fastAdvertising: Boolean = true,
@@ -108,6 +109,9 @@ object WatchStore {
 
     fun setConnected(connected: Boolean) = update(save = false) { it.copy(connected = connected) }
 
+    /** The paired watch connected. A sync usually follows, but it can also fail. */
+    fun seen() = update { it.copy(lastSeen = System.currentTimeMillis()) }
+
     fun setCodeRequested(requested: Boolean) =
         update(save = false) { it.copy(codeRequested = requested) }
 
@@ -134,6 +138,7 @@ object WatchStore {
     fun onState(data: ByteArray, address: String): Boolean {
         val st = runCatching { Protocol.parseState(data) }.getOrNull() ?: return false
         var accepted = false
+        val now = System.currentTimeMillis()
         update { s ->
             val justPaired = s.pairing && st.flags and Protocol.STATE_JUST_PAIRED != 0
             if (!justPaired && (!s.paired || st.token != s.token)) return@update s
@@ -153,7 +158,8 @@ object WatchStore {
                 pending = pending,
                 schemaHash = hash,
                 wantSchema = want,
-                lastSync = System.currentTimeMillis(),
+                lastSync = now,
+                lastSeen = now,
                 batteryMv = st.batteryMv,
                 batteryPermille = st.batteryPermille,
                 pairing = false,
@@ -182,6 +188,8 @@ object WatchStore {
                 .mapValues { Pending(it.value.first, it.value.second) },
             rev = prefs.getInt("rev", 0),
             lastSync = prefs.getLong("lastSync", 0),
+            // Saved by an app from before it was kept: the last sync is the best guess
+            lastSeen = maxOf(prefs.getLong("lastSeen", 0), prefs.getLong("lastSync", 0)),
             batteryMv = prefs.getInt("batteryMv", 0),
             batteryPermille = prefs.getInt("batteryPermille", 0),
             fastAdvertising = prefs.getBoolean("fast", true),
@@ -202,6 +210,7 @@ object WatchStore {
             })
             .putInt("rev", s.rev)
             .putLong("lastSync", s.lastSync)
+            .putLong("lastSeen", s.lastSeen)
             .putInt("batteryMv", s.batteryMv)
             .putInt("batteryPermille", s.batteryPermille)
             .putBoolean("fast", s.fastAdvertising)

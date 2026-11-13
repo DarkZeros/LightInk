@@ -277,6 +277,8 @@ class SyncService : Service() {
             // "Syncing…" is about the watch, whose address is known once paired
             val watch = WatchStore.state.value.watchAddress
             if (watch == null || device.address == watch) WatchStore.setConnected(connected)
+            // Seen even if the sync that should follow doesn't happen
+            if (connected && device.address == watch) WatchStore.seen()
         }
 
         @Synchronized

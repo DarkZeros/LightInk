@@ -18,7 +18,8 @@ Off) has passed:
    one refresh window of radio time, about 200 ms.
 3. When it was heard, the flags in the advertisement and the watch's own state decide
    whether a connection is needed at all. Nothing new on either side: radio off right
-   away.
+   away. The phone can't notice such an attempt: the watch counts it as *Seen*, the
+   app's *Last seen* is the last time the watch connected.
 4. Otherwise the watch connects (7.5–15 ms interval), encrypts with the stored key,
    reads the app's changes, writes its values and disconnects. The whole session is
    capped at 1.2 s from radio on.
