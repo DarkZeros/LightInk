@@ -61,22 +61,43 @@ void renderPopup(Display& mDisplay, const char* msg) {
     mDisplay.setTextWrap(true);
 }
 
+namespace {
+    std::string nameOf(const Any& item) {
+        return std::visit([](auto& e) -> std::string {
+            if constexpr (has_name<decltype(e)>::value)
+                return e.name();
+            return "NO_NAME";
+        }, item);
+    }
+    // The actual element behind the wrappers (Indent, Optional)
+    const Any& refOf(const Any& item) {
+        return std::visit([&](auto& e) -> const Any& {
+            if constexpr (has_ref<decltype(e)>::value)
+                return e.ref();
+            return item;
+        }, item);
+    }
+    bool visible(const Any& item) {
+        return std::visit([](auto& e) -> bool {
+            if constexpr (has_visible<decltype(e)>::value)
+                return e.visible();
+            return true;
+        }, item);
+    }
+}
+
 const Any* Sub::sub(uint8_t index) const {
     if (index >= items.size())
         return nullptr;
     return items.data() + index;
 }
 void Sub::button_menu() const {
-    if (items.empty())
+    // Nothing to press when it is empty, or all of it is hidden
+    if (items.empty() || !visible(items[index()]))
         return;
 
     // Resolve the ref before sending the button
-    auto& item = std::visit([&](auto& e) -> const Any& {
-        if constexpr (has_ref<decltype(e)>::value) {
-            return e.ref();
-        }
-        return items[index()];
-    }, items[index()]);
+    auto& item = refOf(items[index()]);
 
     std::visit([&](auto& e) {
         bool captureInput = false;
@@ -95,47 +116,52 @@ void Sub::button_menu() const {
     }, item);
 }
 void Sub::button_updown(int b) const {
-    updownUiState(-b, items.size());
+    // To the next entry in that direction that is shown
+    const int size = items.size();
+    int ind = index();
+    for (auto i = 0; i < size; i++) {
+        ind = (ind + size - b) % size;
+        if (visible(items[ind]))
+            break;
+    }
+    ui.mState[ui.mDepth] = ind;
 }
 
 int Sub::index() const {
-    return curIndex(items.size());
+    // The entries keep their index while hidden. If the selected one is, take the next
+    const int size = items.size();
+    int ind = curIndex(size);
+    for (auto i = 0; i < size && !visible(items[ind]); i++)
+        ind = (ind + 1) % size;
+    return ind;
 }
 
 
-std::string Indent::name() const {
-    return std::visit([&](auto& e) -> std::string {
-        if constexpr (has_name<decltype(e)>::value)
-            return " " + e.name();
-        return " NO_NAME";
-    }, mSub[0]);
-};
-const Any& Indent::ref() const { 
-    return std::visit([&](auto& e) -> const Any& {
-        if constexpr (has_ref<decltype(e)>::value)
-            return e.ref();
-        return mSub[0];
-    }, mSub[0]);
-};
+std::string Indent::name() const { return " " + nameOf(mSub[0]); }
+const Any& Indent::ref() const { return refOf(mSub[0]); }
+
+Optional::Optional(bool& flag, Any item)
+    : Optional([&flag]{ return flag; }, std::move(item)) {}
+Optional::Optional(std::function<bool()> visible, Any item)
+    : mVisible(std::move(visible)) {
+    mSub.emplace_back(std::move(item));
+}
+std::string Optional::name() const { return nameOf(mSub[0]); }
+const Any& Optional::ref() const { return refOf(mSub[0]); }
 
 void Menu::render(Display& mDisplay) const {
     renderHeader(mDisplay, baseName);
     
     auto ind = index();
     for(auto i = 0; i < items.size(); i++) {
+        if (!visible(items[i]))
+            continue;
         if (i == ind) {
             mDisplay.setTextColor(0, 1);
         } else {
             mDisplay.setTextColor(1, 0);
         }
-        std::visit([&](auto& e){
-            if constexpr (has_name<decltype(e)>::value) {
-                mDisplay.println(e.name().c_str());
-            } else {
-                // Default just print the name
-                mDisplay.println("NO_NAME");
-            }
-        }, items[i]);
+        mDisplay.println(nameOf(items[i]).c_str());
     }
 }
 

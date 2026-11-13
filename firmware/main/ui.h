@@ -56,6 +56,7 @@ GENERATE_HAS(name) // What to print by parents
 GENERATE_HAS(render) // Draws into the display buffer, Core::draw() puts it on the panel
 GENERATE_HAS(sub) // Used recursively to get deeper elements
 GENERATE_HAS(ref) // Used to get the actual object, not the wrapper
+GENERATE_HAS(visible) // Menus leave out the entry while it is false
 GENERATE_HAS(capture_input) // Used to automatically do depth++
 GENERATE_HAS(button)
 GENERATE_HAS(button_menu)
@@ -194,11 +195,12 @@ struct DateTime : public Name {
 
 class Sub;
 class Menu;
-class If;
+class Optional;
 class Indent;
 
 using Any = std::variant<
     Indent,
+    Optional,
     DateTime,
     Menu,
     Sub,
@@ -213,18 +215,21 @@ using Any = std::variant<
     Text,
     Name>;
 
-// struct If {
-//     std::function<bool()> condition;
-//     Any item;
-//     // Extra tweaks
-//     bool showDisabled = true;
-//     // void capture_input() const {};
-//     // const Any* sub(uint8_t index) const;
-//     // void button_menu() const;
-//     // void button_updown(int b) const;
-//     // int index() const;
-// };
+// Entry that is on the menu only while its condition holds, e.g. the options of a
+// feature that is switched off. The condition is read each time the menu is drawn or
+// moved, so nothing has to regenerate the menus when it changes. It has to be the
+// outermost wrapper of the entry: Optional{flag, Indent{1, {...}}}
+struct Optional {
+    std::function<bool()> mVisible;
+    std::vector<Any> mSub; // Just the entry, in a vector because Any is not complete yet
 
+    Optional(bool& flag, Any item); // Shown while the flag is set, it is read live
+    Optional(std::function<bool()> visible, Any item);
+
+    bool visible() const { return mVisible(); }
+    std::string name() const;
+    const Any& ref() const;
+};
 
 struct Indent {
     uint8_t mAmount;
