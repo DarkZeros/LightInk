@@ -387,6 +387,10 @@ void Core::handleTouch() {
     auto& ui = kSettings.mUi;
     ESP_LOGE("ui", "depth%d st%d", ui.mDepth, ui.mState[ui.mDepth]);
 
+    // Sound feedback on the menus, and for the press that enters them
+    if (kSettings.mTouch.mBeep && (ui.mDepth >= 0 ? btn != Touch::NONE : btn == Touch::MENU))
+        mTasks.emplace_back(std::async(std::launch::async, Beep::beep));
+
     // A popup swallows the press, any button dismisses it (on the watchface as well)
     if (ui.mPopup) {
         ui.mPopup.reset();

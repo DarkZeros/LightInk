@@ -5,6 +5,8 @@
 #include "touch.h"
 #include "trace.h"
 
+#include <mutex>
+
 #include "driver/gpio.h"
 #include "Arduino.h"
 
@@ -37,6 +39,12 @@ struct Speaker {
   constexpr static auto kChannel = LEDC_CHANNEL_0;
   constexpr static auto kSpeedMode = LEDC_LOW_SPEED_MODE;
   constexpr static auto kClock = LEDC_USE_RC_FAST_CLK;
+
+  // One sound at a time: a second Speaker would retune the timer of the first one and
+  // stop it when it ends. A sound that starts meanwhile plays after it, like the beep
+  // of a button and then what its action plays
+  static inline std::mutex sPlaying;
+  std::lock_guard<std::mutex> playing{sPlaying};
 
   Power::Lock powerLock = Power::Lock(Power::Flag::Speaker);
 

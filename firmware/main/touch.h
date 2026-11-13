@@ -43,6 +43,7 @@ struct TouchSettings {
   MeasureCycles mCycles[2] = {_31ms, _31ms};
   MeasureRate mRate[2] = {_250ms, _1s};
   bool mHaptic {false};
+  bool mBeep {false}; // Sound feedback of the buttons on the menus
   int8_t mSensitivity {60};
   std::array<uint8_t, 4> mMap{{0,1,2,3}};
 

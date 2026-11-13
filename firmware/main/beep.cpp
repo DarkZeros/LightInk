@@ -3,6 +3,8 @@
 #include "peripherals.h"
 #include "settings.h"
 
+#include "Arduino.h"
+
 namespace Beep {
 
 namespace {
@@ -83,6 +85,16 @@ Pattern hourPattern(Sound sound, int hour) {
 
 void hourlyBeep(int hour) {
   Peripherals::speaker(hourPattern(kSettings.mHourly.mSound, hour));
+}
+
+void preview(int hour) {
+  if (kSettings.mTouch.mBeep)
+    delay(300);
+  hourlyBeep(hour);
+}
+
+void beep() {
+  Peripherals::speaker({{kHigh, 20}});
 }
 
 } // namespace Beep

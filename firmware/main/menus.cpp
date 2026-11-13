@@ -90,7 +90,7 @@ UI::Any Core::generateMenus() {
             auto& sound = kSettings.mHourly.mSound;
             const auto count = magic_enum::enum_count<Beep::Sound>();
             sound = magic_enum::enum_value<Beep::Sound>((magic_enum::enum_index(sound).value_or(0) + 1) % count);
-            mTasks.emplace_back(std::async(std::launch::async, Beep::hourlyBeep, mNow.Hour));
+            mTasks.emplace_back(std::async(std::launch::async, Beep::preview, mNow.Hour));
             regenerateMenus(); // For the name of the entry
           }},
         }}},
@@ -138,6 +138,7 @@ UI::Any Core::generateMenus() {
     }},
     UI::Menu{"Touch", {
       UI::Bool{"Haptic", kSettings.mTouch.mHaptic},
+      UI::Bool{"Beep", kSettings.mTouch.mBeep},
       UI::NumberRange<int8_t>{"Sensitivity", kSettings.mTouch.mSensitivity, {40, 80}},
       UI::Loop<MeasureRate>{"Menu Rate", kSettings.mTouch.mRate[0]},
       UI::Loop<MeasureRate>{"Watch Rate", kSettings.mTouch.mRate[1]},
@@ -155,7 +156,7 @@ UI::Any Core::generateMenus() {
         }));
       }},
       UI::Action{"Beep", [&]{
-        mTasks.emplace_back(std::async(std::launch::async, Beep::hourlyBeep, mNow.Hour));
+        mTasks.emplace_back(std::async(std::launch::async, Beep::preview, mNow.Hour));
       }},
       UI::Action{"Tetris Sound", [&]{
         runCancellable("Playing Tetris\nBACK to cancel", Peripherals::tetris);
