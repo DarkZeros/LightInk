@@ -2,6 +2,7 @@
 #pragma once
 
 #include "battery.h"
+#include "beep.h"
 #include "time.h"
 #include "touch.h"
 #include "watchface.h"
@@ -12,6 +13,7 @@ struct Settings {
 
     struct Hourly {
         bool mBeep {false};
+        Beep::Sound mSound {Beep::Sound::Casio};
         bool mVib {false};
         int8_t mFirst {8};
         int8_t mLast {22};

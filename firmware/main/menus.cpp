@@ -84,6 +84,16 @@ UI::Any Core::generateMenus() {
       }},
       UI::Menu{"Hour Beep", {
         UI::Bool{"Beep", kSettings.mHourly.mBeep },
+        // Each press takes the next sound and plays it, as it would sound at this hour
+        UI::Optional{kSettings.mHourly.mBeep, UI::Indent{1, {
+          UI::Action{std::string(magic_enum::enum_name(kSettings.mHourly.mSound)), [&]{
+            auto& sound = kSettings.mHourly.mSound;
+            const auto count = magic_enum::enum_count<Beep::Sound>();
+            sound = magic_enum::enum_value<Beep::Sound>((magic_enum::enum_index(sound).value_or(0) + 1) % count);
+            mTasks.emplace_back(std::async(std::launch::async, Beep::hourlyBeep, mNow.Hour));
+            regenerateMenus(); // For the name of the entry
+          }},
+        }}},
         UI::Bool{"Vibrate", kSettings.mHourly.mVib },
         UI::NumberRange<int8_t>{"First Hour", kSettings.mHourly.mFirst, {0, 24} },
         UI::NumberRange<int8_t>{"Last Hour", kSettings.mHourly.mLast, {0, 24} },
@@ -145,7 +155,7 @@ UI::Any Core::generateMenus() {
         }));
       }},
       UI::Action{"Beep", [&]{
-        mTasks.emplace_back(std::async(std::launch::async, Peripherals::beep));
+        mTasks.emplace_back(std::async(std::launch::async, Beep::hourlyBeep, mNow.Hour));
       }},
       UI::Action{"Tetris Sound", [&]{
         runCancellable("Playing Tetris\nBACK to cancel", Peripherals::tetris);

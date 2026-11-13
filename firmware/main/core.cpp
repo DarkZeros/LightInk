@@ -158,7 +158,7 @@ Core::Core()
         && mNow.Hour <= kSettings.mHourly.mLast)
     {
         if (kSettings.mHourly.mBeep) {
-            mTasks.emplace_back(std::async(std::launch::async, Peripherals::beep));
+            mTasks.emplace_back(std::async(std::launch::async, Beep::hourlyBeep, mNow.Hour));
         }
         if (kSettings.mHourly.mVib) {
             mTasks.emplace_back(std::async(std::launch::async, []{

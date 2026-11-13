@@ -28,6 +28,7 @@ set(srcs
     light.cpp
     touch.cpp
     peripherals.cpp
+    beep.cpp
     time.cpp
     menus.cpp
     ui.cpp
