@@ -20,18 +20,15 @@ void addNote(Pattern& p, int freq, int ms, int gap) {
   p.emplace_back(freq, ms);
 }
 
-// Roman numeral of the hour (1-12): I is a short high beep, V a long high beep and
-// X a long low one. 4 is "bip beeep" (IV), 9 "bip booop" (IX), 12 "booop bip bip" (XII)
+// Roman numeral of the hour (1-12) with two symbols at the same pitch: I is a short
+// beep and V a long one, 10 is two of them (VV) since a third symbol was hard to tell
+// from V. 4 is "bip beeep" (IV), 9 "bip beeep beeep" (IVV), 12 "beeep beeep bip bip"
 Pattern romanPattern(int hour12) {
   constexpr const char* kRoman[] = {"", "I", "II", "III", "IV", "V", "VI",
-                                    "VII", "VIII", "IX", "X", "XI", "XII"};
+                                    "VII", "VIII", "IVV", "VV", "VVI", "VVII"};
   Pattern p;
-  for (auto c = kRoman[hour12]; *c; c++) {
-    if (*c == 'I')
-      addNote(p, kHigh, 70, 110);
-    else
-      addNote(p, *c == 'V' ? kHigh : kLow, 300, 110);
-  }
+  for (auto c = kRoman[hour12]; *c; c++)
+    addNote(p, kHigh, *c == 'I' ? 70 : 300, 110);
   return p;
 }
 
