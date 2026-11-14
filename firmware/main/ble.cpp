@@ -37,8 +37,9 @@ namespace Ble {
 namespace {
 
 constexpr const char* TAG = "ble";
-// Debug: one line per session with its result and timings, and the step that failed
-// ("ble: Synced sync 292 found 2125 conn 2410 enc 13352 done 13547 ms")
+// Debug: one line per session with its result, when each step ended in ms from the start
+// (-1 = not reached) and, on a failure, the step that failed. nvs/init/up: flash,
+// controller and host ready; refresh: the caller gave up (display refresh ended)
 constexpr bool kLogSessions = false;
 
 // Phone advertisement, manufacturer specific data (docs/ble_protocol.md)
@@ -137,7 +138,15 @@ struct Session {
     std::vector<uint8_t> mChanges; // From the app, applied by the caller
     std::optional<BlePeer> mNewPeer;
     // Timing, ms from start (for the log)
-    int mTSynced {-1}, mTFound {-1}, mTConnected {-1}, mTEncrypted {-1}, mTDone {-1};
+    int mTNvs {-1}, mTInit {-1}, mTSynced {-1}, mTScan {-1}, mTFound {-1}, mTConnected {-1};
+    int mTEncrypted {-1}, mTTalked {-1}, mTDisconnected {-1}, mTDone {-1};
+    std::atomic<int> mTGiveUp {-1}; // Written by the caller's task
+
+    // From the caller: the display refresh ended, stop searching
+    void giveUp() {
+        mTGiveUp = ms();
+        mGiveUp = true;
+    }
 
     void start() {
         xTaskCreatePinnedToCore([](void* arg) {
@@ -195,9 +204,11 @@ private:
 
     bool startStack() {
         Storage::init(); // PHY calibration data; without it the radio still works, slower
+        mTNvs = ms();
         if (nimble_port_init() != ESP_OK)
             return false;
         mStackUp = true;
+        mTInit = ms();
 
         sActive = this;
         ble_hs_cfg.sync_cb = [] { xEventGroupSetBits(sActive->mEvents, kEvSynced); };
@@ -487,6 +498,7 @@ private:
         disc.filter_duplicates = 1;
         if (ble_gap_disc(mOwnAddrType, BLE_HS_FOREVER, &disc, onGap, this) != 0)
             return BleResult::Failed;
+        mTScan = ms();
         if (!wait(kEvFound, mDeadlineUs, true)) {
             ble_gap_disc_cancel();
             return mResult == BleResult::Cancelled ? mResult : BleResult::NoPhone;
@@ -566,16 +578,20 @@ private:
     BleResult run() {
         Power::Lock power(Power::Flag::BT);
         auto result = startStack() ? talk() : BleResult::Failed;
+        mTTalked = ms();
         if (mConn != BLE_HS_CONN_HANDLE_NONE) {
             ble_gap_terminate(mConn, BLE_ERR_REM_USER_CONN_TERM);
-            wait(kEvDisconnected, esp_timer_get_time() + 200'000);
+            if (wait(kEvDisconnected, esp_timer_get_time() + 200'000))
+                mTDisconnected = ms();
         }
         stopStack();
         mTDone = ms();
         if constexpr (kLogSessions) {
-            ESP_LOGE(TAG, "%s sync %d found %d conn %d enc %d done %d ms",
-                     std::string(magic_enum::enum_name(result)).c_str(),
-                     mTSynced, mTFound, mTConnected, mTEncrypted, mTDone);
+            ESP_LOGE(TAG, "%s nvs %d init %d up %d scan %d refresh %d found %d conn %d enc %d "
+                     "talk %d disc %d done %d ms",
+                     std::string(magic_enum::enum_name(result)).c_str(), mTNvs, mTInit, mTSynced,
+                     mTScan, mTGiveUp.load(), mTFound, mTConnected, mTEncrypted, mTTalked,
+                     mTDisconnected, mTDone);
             if (result == BleResult::Failed || result == BleResult::NeedsPair)
                 ESP_LOGE(TAG, "failed at %s, status %d", mStep, mStatus);
         }
@@ -678,7 +694,7 @@ Sync::~Sync() {
 
 bool Sync::finish() {
     mFinished = true;
-    mSession->mGiveUp = true;
+    mSession->giveUp();
     mSession->join();
     return commit(*mSession);
 }
