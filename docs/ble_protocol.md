@@ -12,25 +12,28 @@ radio on a full wake (a touch, the hourly full wake, or for *Auto* under an hour
 wake scheduled for the sync), and only when the auto sync interval (5 min to 6 h, or
 Off) has passed:
 
-1. The radio starts with the display refresh (~0.6 s), a continuous passive scan looks
-   for the phone's advertisement. The stack takes about 300 ms to come up.
-2. The scan stops when the refresh has ended and it has lasted at least 120 ms (one
-   advertising interval of the phone), or after 500 ms in any case. No phone heard:
-   radio off, which costs the stack start plus up to 500 ms of scanning (~0.8 s).
+1. The radio starts with the display draw (~330 ms), a continuous passive scan looks
+   for the phone's advertisement. The stack takes ~215 ms to come up: the session runs
+   at 240 MHz (the BT lock holds the high rail it needs), and the controller, the
+   NimBLE host and the session task run on core 1 so the draw on core 0 isn't held up.
+2. The scan stops when the draw has ended and it has lasted at least 300 ms, or after
+   500 ms in any case. No phone heard: radio off, which costs the stack start plus
+   ~300 ms of scanning (~0.5 s).
 3. When it was heard, the flags in the advertisement and the watch's own state decide
    whether a connection is needed at all. Nothing new on either side: radio off right
    away. The phone can't notice such an attempt: the watch counts it as *Seen*, the
    app's *Last seen* is the last time the watch connected.
-4. Otherwise the watch connects (7.5–15 ms interval), encrypts with the stored key,
+4. Otherwise the watch connects (7.5 ms interval), encrypts with the stored key,
    reads the app's changes, writes its values and disconnects. Connecting needs one
    more advertisement of the phone to be heard, given up to 1 s. The whole session is
    capped at 1.8 s from radio on; *Sync now* and *Pair phone* search again when the
-   connection didn't happen.
+   connection didn't happen. An encryption NimBLE reports timed out at once (its own
+   SMP procedure, answering the phone's security request) is started again.
 
 The phone asks for a 100 ms advertising interval, but the watch hears it less often:
 measured, finding it took 13–720 ms from the scan start (median ~120 ms), and the
 next report after one came 140–550 ms later. Connecting, encrypting and the exchange
-take ~500 ms more (see *Measured on the device*). The scan reports every advertisement (no
+take ~280 ms more (see *Measured on the device*). The scan reports every advertisement (no
 duplicate filter): the controller's filter goes by address only, so after one
 advertisement was turned down (*Pair phone* started before the app's pairing screen)
 it would hide the phone's later ones with the new flags.
@@ -246,11 +249,14 @@ The pairing key is a separate NVS key (`ble_peer`), written only when pairing.
 
 ## Power notes
 
-- Radio on-time per automatic attempt, measured (2026-11-14): *Seen* 320–630 ms,
-  *Synced* ~1.0–1.2 s, *No phone* ~0.8 s (stack start plus the 500 ms scan; it was the
-  whole 1.2 s before the scan limit). The current isn't measured; at ~100 mA that is
-  ~10–17 µAh for *Seen* and ~22 µAh for *No phone*. At the default 1 h interval that is
-  5–11 times the ~2 µA idle draw, so for the solar budget choose *Auto: 6h* or *Off*
+- Session time per automatic attempt, measured (2026-11-14, final code): *Seen*
+  240–370 ms (median ~320), *Synced* 500–780 ms (median ~580), *No phone* ~525 ms. A
+  wake with a sync now ends with its display draw (~340 ms) most of the time, against
+  ~325 ms for a wake without one. In the morning, before these changes: *Seen*
+  ~400–430 ms, *Synced* ~900 ms, *No phone* 1.2 s, and a wake with a sync ~650 ms. The
+  current isn't measured; at ~100 mA that is ~9 µAh for *Seen* and ~15 µAh for *No
+  phone*. At the default 1 h interval that is 4–7 times the ~2 µA idle draw, so for the
+  solar budget choose *Auto: 6h* or *Off*
   (*Sync now* still works).
 - No light sleep while Bluetooth is on: with the main crystal as its sleep clock
   (`CONFIG_BTDM_CTRL_LPCLK_SEL_MAIN_XTAL`) the controller holds a no-light-sleep lock
@@ -349,4 +355,33 @@ sync forced on every wake and scripted touches (trace build, rail held high):
   command (HCI Reset) waits 229 ms for the controller, so the host is up at ~275 ms
   (25 ms saved). The rest of the startup sequence takes ~30 ms. The same ~235 ms with
   the trace off, with modem sleep off, with software coexistence off and with the
-  32 kHz sleep clock: it is inside the closed controller library.
+  32 kHz sleep clock: it is inside the closed controller library. It is CPU work:
+  ~520 ms at 80 MHz, ~150 ms at 240 MHz (stack up at ~585, ~300 and ~215 ms). Nothing
+  about it was found online (an esp32.com thread reports ~500 ms at 80 MHz, without
+  an answer).
+- **The controller held up the display draw**: it keeps the core it runs on busy, and
+  the draw runs in the main task on core 0. Wake timings (normal build, a sync on every
+  wake): without Bluetooth the draw took 6–322 ms and the watch slept at 325 ms; with
+  it on core 0 the draw took up to 683 ms and the wake ~650 ms. With the controller,
+  the host and the session task on core 1 the draw takes 6–341 ms again (the busy
+  work runs in the task that enables the controller, so the session task must be
+  pinned too: unpinned it sometimes landed on core 0).
+- **Rail and CPU**: the rail alone changes nothing (160 MHz, high or low: the same
+  times). 240 MHz from boot panicked on the low rail and ran fine with it high; 240 MHz
+  for the session only (switched with `esp_pm_configure`) keeps the draw at ~330 ms.
+  Switching only around `nimble_port_init` slowed the draw to ~450 ms, not adopted.
+  Without the boost (`kBoostMhz = 0`, 160 MHz): *Seen* ~400 ms instead of ~320,
+  *Synced* ~700 instead of ~580, a wake with a sync ~416 instead of ~338.
+- **Open: is 240 MHz worth its current?** 160 MHz is usually the best work per watt,
+  but the 85 ms it adds may cost more if the radio is already powered while the
+  controller starts. To measure with the power monitor (planned for the week of
+  2026-11-16): two builds, `kBoostMhz = 240` and `0`, each with a test patch making
+  `Ble::nextSyncIn()` return 5 (a full wake with a sync every 5 s), and a minute of
+  average current on each. Keep the one that draws less.
+- **Connection interval**: with 7.5–15 ms allowed the controller used 15 ms; at 7.5 ms
+  encrypting takes ~60 ms instead of ~118 and the exchange ~69 ms instead of ~110.
+- **Early encryption timeout**: in 13 of 14 and 2 of 27 forced syncs NimBLE reported
+  the encryption timed out (`BLE_HS_ETIMEOUT`) ~4 ms after the connection, before the
+  watch's own request: an SMP procedure NimBLE starts on the phone's security request.
+  The watch now starts its own again; in the 63 forced syncs after that change the
+  early timeout didn't show up, so the retry hasn't run on the device yet.

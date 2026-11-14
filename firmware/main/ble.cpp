@@ -11,6 +11,8 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
+#include "esp_pm.h"
+#include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
@@ -84,6 +86,8 @@ constexpr int64_t kManualMaxUs = 10'000'000;
 constexpr int64_t kPairFindUs = 60'000'000;
 constexpr int64_t kPairCodeUs = 90'000'000; // Typing the code on the phone
 constexpr int64_t kStepUs = 2'000'000;      // Any single GATT step
+// CPU frequency during a session, see Session::cpuMhz(). 0 keeps the default
+constexpr int kBoostMhz = 240;
 // Connect even with nothing new, so the app sees the watch (battery) once a day
 constexpr time_t kRefreshEvery = 24 * 3600;
 
@@ -653,8 +657,22 @@ private:
         return BleResult::Synced;
     }
 
+    // CPU frequency for the whole session. Enabling the controller keeps the CPU busy
+    // for ~235 ms at 160 MHz (~470 at 80): at 240 MHz the stack is up at ~215 ms instead
+    // of ~300 and a wake with a sync ends with its display draw. 240 MHz needs the high
+    // rail (it crashed at boot on the 1.9 V rail), which the BT lock holds anyway.
+    // 0: keep the default
+    static void cpuMhz(int mhz) {
+        esp_pm_config_t pm = {.max_freq_mhz = mhz, .min_freq_mhz = mhz, .light_sleep_enable = true};
+        esp_pm_configure(&pm);
+    }
+
     BleResult run() {
         Power::Lock power(Power::Flag::BT);
+        if constexpr (kBoostMhz != 0) {
+            esp_rom_delay_us(3000); // Rail ramp, 2.1 ms worst case (storage.cpp)
+            cpuMhz(kBoostMhz);
+        }
         auto result = startStack() ? talk() : BleResult::Failed;
         mTTalked = ms();
         if (mConn != BLE_HS_CONN_HANDLE_NONE) {
@@ -664,6 +682,8 @@ private:
         }
         stopStack();
         mTDone = ms();
+        if constexpr (kBoostMhz != 0)
+            cpuMhz(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ); // Before the BT lock lowers the rail
         if constexpr (kLogSessions) {
             ESP_LOGE(TAG, "%s nvs %d init %d up %d scan %d refresh %d found %d conn %d enc %d "
                      "talk %d disc %d done %d ms, %d retries",
