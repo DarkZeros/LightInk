@@ -63,12 +63,23 @@ const ble_uuid128_t kPendingUuid = LIGHTINK_UUID(0x02); // Watch reads the app's
 const ble_uuid128_t kSchemaUuid = LIGHTINK_UUID(0x03);  // Watch writes the description
 #undef LIGHTINK_UUID
 
-// Android advertises every 100 ms at best (ADVERTISE_MODE_LOW_LATENCY). Connecting
-// takes the advertising event after the one that was heard
-constexpr int kConnectMs = 300;
-// Hard cap of a background sync, from radio on to radio off, for a phone heard late
-// or a slow exchange
-constexpr int64_t kAutoMaxUs = 1'200'000;
+// Connecting takes another advertisement of the phone to be heard. Android advertises
+// every 100 ms at best, but the watch hears the phone only every 140-550 ms (measured);
+// 300 ms made Sync now fail at "connect"
+constexpr int kConnectMs = 1000;
+// A background sync scans at least this long, even when the display refresh (~350 ms)
+// ended before or soon after the stack was up (~300 ms), and at most kMaxScanUs while
+// the refresh goes on. Android asks for 100 ms but the watch hears the phone less often
+// (the phone's radio is shared with its audio links). Measured from the scan start,
+// with the app on the screen 94 % within 300 ms, 98 % within 500 ms; with the app in
+// the background ~75-80 % and ~89 %. A phone missed now is found at the next sync; a
+// phone that isn't there costs the stack start plus the scan
+constexpr int64_t kMinScanUs = 300'000;
+constexpr int64_t kMaxScanUs = 500'000;
+// Hard cap of a background sync, from radio on to radio off, for a slow exchange.
+// Room for a phone found at the end of the scan: stack ~300 ms, scan 500 ms, then
+// connecting (160-640 ms), encrypting (~120 ms) and the exchange (~250-450 ms)
+constexpr int64_t kAutoMaxUs = 1'800'000;
 constexpr int64_t kManualMaxUs = 10'000'000;
 constexpr int64_t kPairFindUs = 60'000'000;
 constexpr int64_t kPairCodeUs = 90'000'000; // Typing the code on the phone
@@ -87,6 +98,7 @@ enum : EventBits_t {
     kEvMtu = 1 << 5,
     kEvGatt = 1 << 6,
     kEvDone = 1 << 7,
+    kEvGiveUp = 1 << 8,
 };
 
 // Its own key, apart from the settings blob: a key, written only when pairing
@@ -141,26 +153,39 @@ struct Session {
     int mTNvs {-1}, mTInit {-1}, mTSynced {-1}, mTScan {-1}, mTFound {-1}, mTConnected {-1};
     int mTEncrypted {-1}, mTTalked {-1}, mTDisconnected {-1}, mTDone {-1};
     std::atomic<int> mTGiveUp {-1}; // Written by the caller's task
+    int mRetries {0}; // Searches again after a failed connection, encryptions again
+    int mTMtu {-1}, mTHandles {-1}, mTRead {-1}, mTSchema {-1}; // Exchange steps
 
     // From the caller: the display refresh ended, stop searching
     void giveUp() {
         mTGiveUp = ms();
         mGiveUp = true;
+        xEventGroupSetBits(mEvents, kEvGiveUp);
     }
 
+    // On the NimBLE host's core (1 on the ESP32, sdkconfig.defaults.esp32): enabling the
+    // controller keeps the calling task busy for ~240 ms, which on core 0 held up the
+    // display draw of the main task
     void start() {
         xTaskCreatePinnedToCore([](void* arg) {
             auto& s = *static_cast<Session*>(arg);
             s.mResult = s.run();
             xEventGroupSetBits(s.mEvents, kEvDone);
             vTaskDelete(nullptr);
-        }, "ble", 4096, this, 5, nullptr, tskNO_AFFINITY);
+        }, "ble", 4096, this, 5, nullptr, kCore);
     }
+    static constexpr BaseType_t kCore =
+#if CONFIG_FREERTOS_UNICORE
+        tskNO_AFFINITY;
+#else
+        CONFIG_BT_NIMBLE_PINNED_TO_CORE;
+#endif
     void join() { xEventGroupWaitBits(mEvents, kEvDone, pdFALSE, pdTRUE, portMAX_DELAY); }
 
 private:
     int64_t mStartUs {esp_timer_get_time()};
     int64_t mDeadlineUs {0};
+    int64_t mScanMinEndUs {0}, mScanMaxEndUs {0};
     bool mStackUp {false}, mHostUp {false};
     uint8_t mOwnAddrType {0};
     uint8_t mAdvFlags {0};
@@ -177,14 +202,23 @@ private:
     int ms() const { return (esp_timer_get_time() - mStartUs) / 1000; }
 
     // Waits for any of `bits` until the deadline. Fails early on BACK, on a lost
-    // link and, while searching, when the caller gives up
+    // link and, while searching, once the caller gave up and the minimum scan is over
     bool wait(EventBits_t bits, int64_t deadlineUs, bool searching = false) {
         while (true) {
             const auto now = esp_timer_get_time();
-            if (now >= deadlineUs)
+            auto end = deadlineUs;
+            EventBits_t also = kEvDisconnected;
+            if (searching) {
+                end = std::min(end, mScanMaxEndUs);
+                if (mGiveUp)
+                    end = std::min(end, mScanMinEndUs);
+                else
+                    also |= kEvGiveUp; // Wake up when it happens, not at the next slice
+            }
+            if (now >= end)
                 return false;
-            const auto slice = std::min<int64_t>(deadlineUs - now, 50'000);
-            const auto got = xEventGroupWaitBits(mEvents, bits | kEvDisconnected, pdFALSE, pdFALSE,
+            const auto slice = std::min<int64_t>(end - now, 50'000);
+            const auto got = xEventGroupWaitBits(mEvents, bits | also, pdFALSE, pdFALSE,
                                                  pdMS_TO_TICKS(slice / 1000) + 1);
             if (got & bits) {
                 xEventGroupClearBits(mEvents, bits);
@@ -196,8 +230,6 @@ private:
                 mResult = BleResult::Cancelled;
                 return false;
             }
-            if (searching && mGiveUp)
-                return false;
         }
     }
     int64_t step() const { return std::min(esp_timer_get_time() + kStepUs, mDeadlineUs); }
@@ -324,11 +356,15 @@ private:
         if (needConnect()) {
             ble_gap_conn_params p{};
             p.scan_itvl = p.scan_window = 48; // 30 ms, continuous
-            p.itvl_min = 6;                   // 7.5 ms: few round trips, done quickly
-            p.itvl_max = 12;
+            // 7.5 ms, the shortest: with 7.5-15 ms the controller took 15 ms, a GATT round
+            // trip then took 30-45 ms
+            p.itvl_min = p.itvl_max = 6;
             p.latency = 0;
             p.supervision_timeout = 50; // 500 ms
-            mStatus = ble_gap_connect(mOwnAddrType, &d.addr, kConnectMs, &p, onGap, this);
+            // Within the session's deadline (a background sync's cap)
+            const auto leftMs = (mDeadlineUs - esp_timer_get_time()) / 1000;
+            const int32_t timeoutMs = std::clamp<int64_t>(leftMs, 50, kConnectMs);
+            mStatus = ble_gap_connect(mOwnAddrType, &d.addr, timeoutMs, &p, onGap, this);
             mConnecting = mStatus == 0;
         }
         xEventGroupSetBits(mEvents, kEvFound);
@@ -490,26 +526,45 @@ private:
         mDeadlineUs = mStartUs + (mMode == Mode::Auto ? kAutoMaxUs
                                   : mMode == Mode::Manual ? kManualMaxUs : kPairFindUs);
 
-        // 1. Search the phone. Continuous passive scan: the phone advertises every 100 ms
-        mStep = "scan";
-        ble_gap_disc_params disc{};
-        disc.itvl = disc.window = 48; // 30 ms
-        disc.passive = 1;
-        disc.filter_duplicates = 1;
-        if (ble_gap_disc(mOwnAddrType, BLE_HS_FOREVER, &disc, onGap, this) != 0)
-            return BleResult::Failed;
-        mTScan = ms();
-        if (!wait(kEvFound, mDeadlineUs, true)) {
-            ble_gap_disc_cancel();
-            return mResult == BleResult::Cancelled ? mResult : BleResult::NoPhone;
-        }
-        if (!mConnecting)
-            return needConnect() ? BleResult::Failed : BleResult::Seen;
+        // 1. Search the phone, 2. connect to it. The connection needs another advertisement
+        // of the phone to be heard: when none comes in time Sync now and Pair search again,
+        // a background sync gives up (the next one will try again)
+        while (true) {
+            // Continuous passive scan
+            mStep = "scan";
+            ble_gap_disc_params disc{};
+            disc.itvl = disc.window = 48; // 30 ms
+            disc.passive = 1;
+            // Every advertisement reaches the host. The controller's duplicate filter goes
+            // by address only (CONFIG_BTDM_SCAN_DUPL_TYPE_DEVICE): once the phone's first
+            // one was turned down (Pair started before the app's pairing screen) its later
+            // ones, with new flags, would never be reported until the phone changes its
+            // address
+            disc.filter_duplicates = 0;
+            if (ble_gap_disc(mOwnAddrType, BLE_HS_FOREVER, &disc, onGap, this) != 0)
+                return BleResult::Failed;
+            if (mTScan < 0)
+                mTScan = ms();
+            mScanMinEndUs = esp_timer_get_time() + kMinScanUs;
+            // Background syncs only: Sync now and Pair search until their own deadline
+            mScanMaxEndUs = mMode == Mode::Auto ? esp_timer_get_time() + kMaxScanUs : mDeadlineUs;
+            if (!wait(kEvFound, mDeadlineUs, true)) {
+                ble_gap_disc_cancel();
+                return mResult == BleResult::Cancelled ? mResult : BleResult::NoPhone;
+            }
+            if (!mConnecting)
+                return needConnect() ? BleResult::Failed : BleResult::Seen;
 
-        // 2. Connect, the phone is there: the cap applies from now on, not the refresh
-        mStep = "connect";
-        if (!wait(kEvConnected, esp_timer_get_time() + kConnectMs * 1000 + 100'000) || mStatus != 0)
-            return BleResult::Failed;
+            mStep = "connect";
+            if (wait(kEvConnected, esp_timer_get_time() + kConnectMs * 1000 + 100'000) && mStatus == 0)
+                break;
+            if (mMode == Mode::Auto || mResult == BleResult::Cancelled
+                || esp_timer_get_time() >= mDeadlineUs)
+                return mResult == BleResult::Cancelled ? mResult : BleResult::Failed;
+            mRetries++;
+            mConnecting = false;
+            mFound = false; // The host task is idle now: no advertisement is being handled
+        }
         mTConnected = ms();
         if (mMode == Mode::Pair)
             mDeadlineUs = esp_timer_get_time() + kPairCodeUs;
@@ -526,12 +581,31 @@ private:
 
         // 4. Encrypt: a pairing (the phone asks for the code) or the stored key
         mStep = "encrypt";
-        const int rc = mMode == Mode::Pair
-            ? ble_gap_security_initiate(mConn)
-            : ble_gap_encryption_initiate(mConn, mPeer->mKeySize, mPeer->mLtk.data(), mPeer->mEdiv,
-                                          mPeer->mRand, mPeer->mAuthenticated);
-        if (rc != 0 || !wait(kEvEncrypted, mMode == Mode::Pair ? mDeadlineUs : step()))
-            return mResult == BleResult::Cancelled ? mResult : BleResult::Failed;
+        for (int tries = 1;; tries++) {
+            // Only the result of this attempt counts. NimBLE answers the phone's security
+            // request with an SMP procedure of its own (the key comes from knowKey()), and
+            // sometimes reports it timed out ~4 ms after the connection, before or just
+            // after this starts (measured 2 in 27 and 13 in 14 syncs): try again then
+            xEventGroupClearBits(mEvents, kEvEncrypted);
+            mStatus = 0;
+            const auto startUs = esp_timer_get_time();
+            const int rc = mMode == Mode::Pair
+                ? ble_gap_security_initiate(mConn)
+                : ble_gap_encryption_initiate(mConn, mPeer->mKeySize, mPeer->mLtk.data(),
+                                              mPeer->mEdiv, mPeer->mRand, mPeer->mAuthenticated);
+            // EALREADY: NimBLE's own procedure runs, its result comes the same way
+            if (rc != 0 && rc != BLE_HS_EALREADY) {
+                mStatus = rc;
+                return BleResult::Failed;
+            }
+            if (!wait(kEvEncrypted, mMode == Mode::Pair ? mDeadlineUs : step()))
+                return mResult == BleResult::Cancelled ? mResult : BleResult::Failed;
+            // A real SMP timeout takes 30 s
+            const bool early = esp_timer_get_time() - startUs < 1'000'000;
+            if (mStatus != BLE_HS_ETIMEOUT || !early || tries == 3)
+                break;
+            mRetries++;
+        }
         if (mStatus != 0) {
             // The phone lost its key (forgotten in Android's settings). Reported only
             // because NimBLE's own new pairing on this error is off (main/CMakeLists.txt)
@@ -547,11 +621,13 @@ private:
         }
         if (mtu)
             wait(kEvMtu, step());
+        mTMtu = ms();
 
         // 5. Exchange
         mStep = "discover";
         if (!findHandles())
             return BleResult::Failed;
+        mTHandles = ms();
         uint16_t ackRev = 0;
         if (mAdvFlags & kPending) {
             mStep = "read";
@@ -561,12 +637,14 @@ private:
             mChanges.assign(mRead.begin() + 3, mRead.end());
             // Send the values as they will be once applied
             SettingsTable::overlay(mValues, mChanges);
+            mTRead = ms();
         }
         if (mSendSchema || (mAdvFlags & kWantSchema)) {
             mStep = "schema";
             if (!write(mHandles.mSchema, mSchema))
                 return BleResult::Failed;
             mSchemaSent = true;
+            mTSchema = ms();
         }
         mStep = "state";
         if (!write(mHandles.mState, state(ackRev)))
@@ -588,10 +666,13 @@ private:
         mTDone = ms();
         if constexpr (kLogSessions) {
             ESP_LOGE(TAG, "%s nvs %d init %d up %d scan %d refresh %d found %d conn %d enc %d "
-                     "talk %d disc %d done %d ms",
+                     "talk %d disc %d done %d ms, %d retries",
                      std::string(magic_enum::enum_name(result)).c_str(), mTNvs, mTInit, mTSynced,
                      mTScan, mTGiveUp.load(), mTFound, mTConnected, mTEncrypted, mTTalked,
-                     mTDisconnected, mTDone);
+                     mTDisconnected, mTDone, mRetries);
+            if (mTConnected >= 0)
+                ESP_LOGE(TAG, "gatt: mtu %d handles %d read %d schema %d ms, mtu %u",
+                         mTMtu, mTHandles, mTRead, mTSchema, mMtu);
             if (result == BleResult::Failed || result == BleResult::NeedsPair)
                 ESP_LOGE(TAG, "failed at %s, status %d", mStep, mStatus);
         }

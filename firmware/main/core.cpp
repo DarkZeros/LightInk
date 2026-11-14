@@ -156,6 +156,7 @@ Core::Core()
 
     // Bluetooth sync with the phone, only on wakes that boot anyway. It runs while the
     // display refreshes and gives up when the refresh ends unless the phone answered
+    // (it scans at least one advertising interval of the phone, see ble.cpp)
     std::optional<Ble::Sync> bleSync;
     const auto now = mTime.getTimeval().tv_sec;
     if ((wakeup_reason == ESP_SLEEP_WAKEUP_TIMER || wakeup_reason == ESP_SLEEP_WAKEUP_TOUCHPAD)

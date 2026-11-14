@@ -39,3 +39,8 @@ CONFIG_LWIP_TCP_WND_DEFAULT=5744
 CONFIG_LWIP_HOOK_IP6_INPUT_NONE=y
 CONFIG_MBEDTLS_ECP_FIXED_POINT_OPTIM=y
 CONFIG_DIAG_USE_EXTERNAL_LOG_WRAP=y
+# Bluetooth controller and NimBLE host on core 1: the controller keeps its core busy
+# for ~235 ms after it is enabled, which on core 0 held up the display draw (main task)
+# and made a wake with a sync ~650 ms instead of ~430 ms (measured 2026-11-14)
+CONFIG_BTDM_CTRL_PINNED_TO_CORE_1=y
+CONFIG_BT_NIMBLE_PINNED_TO_CORE_1=y

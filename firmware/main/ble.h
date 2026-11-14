@@ -14,7 +14,8 @@ class Cancel;
  * The watch is the BLE central and the phone the peripheral: the phone advertises all
  * the time and hosts the GATT server, the watch only turns its radio on for a moment
  * and decides when to talk. A wake that syncs scans while the display refreshes; if the
- * phone isn't heard by the time the refresh ends the radio goes off again. The phone's
+ * phone isn't heard by the time the refresh ends (and one advertising interval of
+ * scanning, as the stack can be slower than the refresh) the radio goes off. The phone's
  * advertisement says whether it has changes, so when neither side has anything new
  * there is no connection at all. Wire format: docs/ble_protocol.md.
  */

@@ -12,23 +12,37 @@ radio on a full wake (a touch, the hourly full wake, or for *Auto* under an hour
 wake scheduled for the sync), and only when the auto sync interval (5 min to 6 h, or
 Off) has passed:
 
-1. The radio starts with the display refresh, a continuous passive scan looks for the
-   phone's advertisement.
-2. When the refresh ends and the phone wasn't heard, the radio goes off: no phone costs
-   one refresh window of radio time, about 200 ms.
+1. The radio starts with the display refresh (~0.6 s), a continuous passive scan looks
+   for the phone's advertisement. The stack takes about 300 ms to come up.
+2. The scan stops when the refresh has ended and it has lasted at least 120 ms (one
+   advertising interval of the phone), or after 500 ms in any case. No phone heard:
+   radio off, which costs the stack start plus up to 500 ms of scanning (~0.8 s).
 3. When it was heard, the flags in the advertisement and the watch's own state decide
    whether a connection is needed at all. Nothing new on either side: radio off right
    away. The phone can't notice such an attempt: the watch counts it as *Seen*, the
    app's *Last seen* is the last time the watch connected.
 4. Otherwise the watch connects (7.5–15 ms interval), encrypts with the stored key,
-   reads the app's changes, writes its values and disconnects. The whole session is
-   capped at 1.2 s from radio on.
+   reads the app's changes, writes its values and disconnects. Connecting needs one
+   more advertisement of the phone to be heard, given up to 1 s. The whole session is
+   capped at 1.8 s from radio on; *Sync now* and *Pair phone* search again when the
+   connection didn't happen.
 
-With the phone advertising every 100 ms, finding it takes 0–110 ms and connecting
-about one more advertising interval. With `kLogSessions` set in `ble.cpp` (debug, off
-by default) the watch logs one line per session with the times, and the step that
-failed: `ble: Synced sync 292 found 2125 conn 2410 enc 13352 done 13547 ms` (ms from
-radio on). See *Measured on the device* below.
+The phone asks for a 100 ms advertising interval, but the watch hears it less often:
+measured, finding it took 13–720 ms from the scan start (median ~120 ms), and the
+next report after one came 140–550 ms later. Connecting, encrypting and the exchange
+take ~500 ms more (see *Measured on the device*). The scan reports every advertisement (no
+duplicate filter): the controller's filter goes by address only, so after one
+advertisement was turned down (*Pair phone* started before the app's pairing screen)
+it would hide the phone's later ones with the new flags.
+
+With `kLogSessions` set in `ble.cpp` (debug, off by default) the watch logs one line
+per session with the time each step ended, in ms from the session start (-1 = not
+reached), and the step that failed: `ble: Synced nvs 3 init 250 up 292 scan 293
+refresh 210 found 340 conn 450 enc 500 talk 600 disc 620 done 660 ms, 0 retries` (an
+example of the format, not a measurement; retries: searches again after a connection
+that didn't happen). `nvs`, `init`, `up`: flash, controller and host ready;
+`refresh`: the display refresh ended (background sync only); `talk`: the exchange
+ended. See *Measured on the device* below.
 
 Menu flows (*Pair phone*, *Sync now*) use the same session with longer limits and
 BACK to cancel.
@@ -100,10 +114,12 @@ watch rejects Android's connection parameter update requests (`BLE_ERR_CONN_PARM
 Android asks for 45 ms right after connecting, which made the exchange about 6 times
 longer on air.
 
-The app's foreground notification is there only while pairing, while changes wait for
-the watch, or with *Always reachable* on. Otherwise the service runs without it while
-the app is open and Android stops it some time after: the watch then finds no phone
-until the app is opened again, which costs the watch only its usual listening window.
+The app's foreground notification is there while pairing, while changes wait for the
+watch, and with *Always reachable* on (the default; then on a minimum-importance
+channel, which Android shows at low importance at least for a foreground service). With *Always reachable* off the
+service runs without it while the app is open and Android stops it a minute or two
+after (measured: ~2 min): the watch then finds no phone until the app is opened again,
+and each automatic sync costs the stack start plus the whole 500 ms scan.
 
 Android advertises from a resolvable private address that rotates, and the ESP32
 controller has no LL privacy, so NimBLE could not match a later connection to its bond.
@@ -230,16 +246,25 @@ The pairing key is a separate NVS key (`ble_peer`), written only when pairing.
 
 ## Power notes
 
-- One attempt with no phone around keeps the radio on for about one refresh window plus
-  the stack start. Estimate, not measured yet: ~100 mA for ~250 ms is ~7 µAh per
-  attempt. At the default 1 h interval that is several times the ~2 µA idle draw, so
-  for the solar budget choose *Auto: 6h* or *Off* (*Sync now* still works). The log
-  line above gives the real on-time.
+- Radio on-time per automatic attempt, measured (2026-11-14): *Seen* 320–630 ms,
+  *Synced* ~1.0–1.2 s, *No phone* ~0.8 s (stack start plus the 500 ms scan; it was the
+  whole 1.2 s before the scan limit). The current isn't measured; at ~100 mA that is
+  ~10–17 µAh for *Seen* and ~22 µAh for *No phone*. At the default 1 h interval that is
+  5–11 times the ~2 µA idle draw, so for the solar budget choose *Auto: 6h* or *Off*
+  (*Sync now* still works).
+- No light sleep while Bluetooth is on: with the main crystal as its sleep clock
+  (`CONFIG_BTDM_CTRL_LPCLK_SEL_MAIN_XTAL`) the controller holds a no-light-sleep lock
+  from enable to disable, and an APB-max lock while the radio is awake. The CPU idles
+  (clock gated) between events; the scan keeps the radio on all the time anyway. The
+  board's 32 kHz oscillator could be the sleep clock
+  (`CONFIG_BTDM_CTRL_LPCLK_SEL_EXT_32K_XTAL`, allowed with `RTC_CLK_SRC_EXT_OSC`): tried,
+  the start was the same and one exchange ran slow, not adopted without a current
+  measurement.
 - Below 10 % battery the watch doesn't sync on its own.
 - *Auto* 1h and 6h add no wakes: they use the hourly full wake and touches. *5min* and
   *15min* replace the wake stub's cheap minute updates by a full boot plus a sync every
-  interval: at 5 min that is 12 sessions an hour, roughly 12 × 7 µAh, about 40 times
-  the idle draw. They skip the extra wakes at night (*Night* in Power, 0–6 am) and
+  interval: at 5 min that is 12 sessions an hour, roughly 12 × 10–17 µAh, about 60–100
+  times the idle draw. They skip the extra wakes at night (*Night* in Power, 0–6 am) and
   below 10 % battery. No wake stub change.
 
 ## Measured on the device
@@ -280,8 +305,48 @@ The pairing key is a separate NVS key (`ble_peer`), written only when pairing.
   then Android stopped the background service.
 - Not tried on the device yet: the number pad code entry and removeBond() (both need a
   new pairing).
-- **Open: the stack start.** 292 ms to bring NimBLE and the controller up is longer than
-  the ~200 ms refresh window, and a background sync gives up when the refresh ends. If
-  later sessions show the same, an automatic sync can never find the phone: start the
-  radio earlier in the wake or widen the window. One sample so far, maybe including
-  a first PHY calibration.
+
+2026-11-14, same watch and phone, about 140 automatic sessions with `kLogSessions`, a
+sync forced on every wake and scripted touches (trace build, rail held high):
+
+- **Stack start ~300 ms**, the same on every wake: flash init 21 ms, controller 13 ms,
+  NimBLE host ready ~265 ms after that.
+- **The display refresh takes ~1.0–1.1 s** in the trace build (menus and watchface)
+  and ~585 ms in a normal build, not ~200 ms, so the 120 ms minimum scan never came
+  into play.
+- **Phone present**: *Seen* in 317–1007 ms, phone found 13–720 ms after the scan
+  started (median ~120 ms). *Synced* (the daily refresh, values sent): stack 300,
+  found +47–100, connected +160, encrypted +118, exchange +240–255, disconnected +16,
+  radio off at 894–946 ms.
+- **Phone not advertising**: every session ran into the 1.2 s cap (*No phone*). Before
+  the test the app's service had been stopped by Android since the evening before, and
+  in the morning it lived only ~2 min after the app was opened (`dumpsys
+  bluetooth_manager`, GATT server register/unregister): this is what makes syncs fail
+  and *Sync now* wait its 10 s.
+- **Duplicate filter**, test build ignoring the phone's first advertisement: with the
+  controller's filter on, 24 of 24 sessions never heard the phone again (*No phone*);
+  with it off, 17 of 17 heard it again 140–550 ms later. A found-late session that must
+  connect doesn't fit the 1.2 s cap: found at 710 and 870 ms, the exchange was cut
+  (*Failed*, at discover and schema); found at 693 ms it ended at 1198 ms.
+- Android's advertising set: interval 160 (100 ms), legacy, connectable, -7 dBm, one of
+  9 sets on the phone. Why the watch hears it every 140–550 ms instead of every 100 ms
+  is open; likely the phone's radio sharing air time: Galaxy Buds3 Pro were connected
+  (classic and LE) and playing audio during all these measurements.
+- **Found within the scan limit**: with the app on the screen 96 % within 400 ms and
+  98 % within 500 ms of the scan start (152 sessions); with the app in the background
+  (foreground service) ~80 % and ~89 % (35 sessions).
+- **Connecting** took 160–640 ms after the phone was found; the old 300 ms connect
+  window made *Sync now* and some background syncs fail at `connect`. With 1 s and a
+  new search after a failed connect, *Sync now* synced in 724 ms.
+- **Always reachable on** (quiet foreground notification): the service and its GATT
+  server stayed up for 3.5 h in the background (16:58 to 20:30, then still running).
+  Android raises a foreground service's notification to at least low importance
+  (`importance=2` in `dumpsys notification`), so the minimum-importance channel still
+  shows its icon on some phones.
+- **Where the stack start goes**: HCI timings through linker wraps (test build). The
+  host task is created at 34 ms but only runs at ~265 ms: the controller keeps core 0
+  busy after it is enabled. With the host on core 1 it starts at 34 ms, but its first
+  command (HCI Reset) waits 229 ms for the controller, so the host is up at ~275 ms
+  (25 ms saved). The rest of the startup sequence takes ~30 ms. The same ~235 ms with
+  the trace off, with modem sleep off, with software coexistence off and with the
+  32 kHz sleep clock: it is inside the closed controller library.
