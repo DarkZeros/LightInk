@@ -449,7 +449,7 @@ private fun AppCard(state: WatchState) {
             headlineContent = { Text("Fast advertising") },
             supportingContent = {
                 Text(
-                    "Every 100 ms instead of 250 ms. The watch only listens for about 200 ms, " +
+                    "Every 100 ms instead of 250 ms. The watch listens for at most 500 ms," +
                         "so turning this off saves phone battery but syncs get missed."
                 )
             },
@@ -463,10 +463,10 @@ private fun AppCard(state: WatchState) {
             headlineContent = { Text("Always reachable") },
             supportingContent = {
                 Text(
-                    "Keeps a notification so Android doesn't stop the app: the watch can sync " +
-                        "any time and its battery and settings show up here. Off, the " +
-                        "notification is only there while changes wait for the watch, and the " +
-                        "watch's own changes arrive when the app is open."
+                    "Keeps a quiet notification so Android doesn't stop the app: the watch " +
+                        "can sync any time and its battery and settings show up here. Off, " +
+                        "Android stops the app a minute or two after you leave it, and the " +
+                        "watch only finds the phone while changes wait or the app is open."
                 )
             },
             colors = ListItemDefaults.colors(containerColor = CardDefaults.cardColors().containerColor),

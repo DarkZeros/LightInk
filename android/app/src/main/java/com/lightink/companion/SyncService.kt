@@ -45,9 +45,10 @@ import java.util.UUID
  * the GATT service. The watch decides when to talk (a short window while its display
  * refreshes).
  *
- * It's a foreground service, with its notification, only while something needs the
- * watch: pairing, changes waiting, or "Always reachable". Otherwise it runs without a
- * notification while the app is open, and Android stops it some time after.
+ * It's a foreground service, with its notification, while pairing, while changes wait,
+ * or with "Always reachable" (on by default, then the notification is a quiet one).
+ * Otherwise it runs without a notification while the app is open, and Android stops it
+ * a minute or two after.
  */
 @SuppressLint("MissingPermission") // Started only once the permissions are granted
 class SyncService : Service() {
@@ -342,17 +343,20 @@ class SyncService : Service() {
 
     // --- Foreground notification -------------------------------------------------------
 
-    /** Title and text of the notification, or null when nothing needs it. */
-    private fun notice(s: WatchState): Pair<String, String>? = when {
-        s.pairing && s.codeRequested -> "Pairing with the watch" to "Type the code shown on the watch"
-        s.pairing -> "Pairing with the watch" to "Waiting for the watch"
+    /** The notification, quiet when it only keeps the link up. */
+    private data class Notice(val title: String, val text: String, val quiet: Boolean = false)
+
+    /** The notification, or null when nothing needs it. */
+    private fun notice(s: WatchState): Notice? = when {
+        s.pairing && s.codeRequested -> Notice("Pairing with the watch", "Type the code shown on the watch")
+        s.pairing -> Notice("Pairing with the watch", "Waiting for the watch")
         s.pending.isNotEmpty() ->
-            "${s.pending.size} change(s) waiting for the watch" to "They apply at its next sync"
-        s.alwaysReachable && s.paired -> "LightInk" to "The watch can sync any time"
+            Notice("${s.pending.size} change(s) waiting for the watch", "They apply at its next sync")
+        s.alwaysReachable && s.paired -> Notice("LightInk", "The watch can sync any time", quiet = true)
         else -> null
     }
 
-    private fun updateForeground(notice: Pair<String, String>?) {
+    private fun updateForeground(notice: Notice?) {
         if (notice == null) {
             if (foreground) ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             foreground = false
@@ -365,18 +369,26 @@ class SyncService : Service() {
                 setShowBadge(false)
             }
         )
+        // Minimum importance: no status bar icon, folded at the bottom of the shade
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_IDLE, "Watch reachable", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Keeps the app running so the LightInk watch can sync any time"
+                setShowBadge(false)
+            }
+        )
         val open = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_watch)
-            .setContentTitle(notice.first)
-            .setContentText(notice.second)
-            .setContentIntent(open)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
+        val notification: Notification =
+            NotificationCompat.Builder(this, if (notice.quiet) CHANNEL_IDLE else CHANNEL)
+                .setSmallIcon(R.drawable.ic_watch)
+                .setContentTitle(notice.title)
+                .setContentText(notice.text)
+                .setContentIntent(open)
+                .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setPriority(if (notice.quiet) NotificationCompat.PRIORITY_MIN else NotificationCompat.PRIORITY_LOW)
+                .build()
         ServiceCompat.startForeground(
             this, NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
@@ -386,6 +398,7 @@ class SyncService : Service() {
     companion object {
         private const val TAG = "LightInkSync"
         private const val CHANNEL = "link"
+        private const val CHANNEL_IDLE = "reachable"
         private const val NOTIFICATION_ID = 1
 
         /** Foreground start (from the background, e.g. boot) only when it will notify. */

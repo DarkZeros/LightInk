@@ -24,7 +24,10 @@ data class WatchState(
     val batteryMv: Int = 0,
     val batteryPermille: Int = 0,
     val fastAdvertising: Boolean = true,
-    val alwaysReachable: Boolean = false, // Keep the notification and the link up all the time
+    // Keep the service, and so the advertising, up all the time with a quiet notification.
+    // Off, Android stops the service a minute or two after the app leaves the screen and
+    // the watch finds no phone (measured 2026-11-14), so it's on unless turned off
+    val alwaysReachable: Boolean = true,
     val pairingAddress: String? = null, // Watch seen while pairing, its bond may be left over
     // Not saved
     val pairing: Boolean = false,
@@ -193,7 +196,7 @@ object WatchStore {
             batteryMv = prefs.getInt("batteryMv", 0),
             batteryPermille = prefs.getInt("batteryPermille", 0),
             fastAdvertising = prefs.getBoolean("fast", true),
-            alwaysReachable = prefs.getBoolean("alwaysReachable", false),
+            alwaysReachable = prefs.getBoolean("alwaysReachable", true),
             pairingAddress = prefs.getString("pairingAddress", null),
         )
     }
