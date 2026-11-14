@@ -119,6 +119,10 @@ git submodule update --init --recursive
 cd firmware && ./setup.sh && idf.py build flash monitor
 ```
 
+The first build creates `firmware/main/secrets.cpp` from `secrets.default.cpp`.
+Put your WiFi networks and radio signals there: the file is ignored by git, so they
+stay on your computer.
+
 ## Helping the project
 
 Just push to a non protected branch and ask for PR.

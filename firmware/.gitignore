@@ -28,5 +28,5 @@ sdkconfig.old
 # Ignore backup files
 *~
 
-# Ignore secret .cpp
+# The local secrets. The build creates the file from main/secrets.default.cpp
 main/secrets.cpp

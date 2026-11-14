@@ -59,6 +59,15 @@ set(srcs
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# secrets.cpp (WiFi networks, radio signals) is local and gitignored: a fresh clone
+# starts from a copy of the defaults. An existing one is never touched
+if(NOT CMAKE_BUILD_EARLY_EXPANSION AND NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/secrets.cpp")
+    file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/secrets.default.cpp"
+                   "${CMAKE_CURRENT_LIST_DIR}/secrets.cpp")
+    message(NOTICE "main/secrets.cpp created from secrets.default.cpp: "
+                   "put your WiFi networks and radio signals there")
+endif()
+
 idf_component_register(SRCS ${srcs} INCLUDE_DIRS ${includedirs} REQUIRES ${requires} PRIV_REQUIRES ${privrequires})
 
 #set_property(TARGET ${COMPONENT_TARGET} PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
