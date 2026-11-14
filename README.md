@@ -63,7 +63,7 @@ The project goals are:
   - [ ] Tides
   - [ ] Pictures, etc
 - [ ] Configurable Alarms
-- [ ] BT - Companion App ([android/](android/), [protocol](docs/ble_protocol.md))
+- [ ] BT - Companion App ([android/](android/README.md), [protocol](docs/ble_protocol.md))
   - [X] Pairing and settings sync
   - [ ] LoRa messages through the phone
 - [ ] Support other boards
@@ -88,6 +88,8 @@ lightink/
 │   └── esp-idf/      # The ESP-IDF version used to build (it has changes compared to upstream)
 │   ...               # Other misc files like partitions / sdkconfig / ...
 │
+├── android/          # The companion app (pairing and settings over Bluetooth)
+│
 ├── hardware/
 │   ├── pcb/          # Schematics, BOM and diagrams
 │   └── case/         # STL files for from and back
@@ -105,6 +107,8 @@ lightink/
 - 🛠️ [Hardware](hardware/HARDWARE.md)
 - ✨ [Hardware - Case](hardware/case/CASE.md)
 - ⚡ [Hardware - PCB](hardware/pcb/PCB.md)
+- 📱 [Companion app](android/README.md)
+- 📡 [Bluetooth protocol](docs/ble_protocol.md)
 
 ## How to build the firmware?
 
