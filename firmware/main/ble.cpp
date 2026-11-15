@@ -41,7 +41,7 @@ namespace {
 constexpr const char* TAG = "ble";
 // Debug: one line per session with its result, when each step ended in ms from the start
 // (-1 = not reached) and, on a failure, the step that failed. nvs/init/up: flash,
-// controller and host ready; refresh: the caller gave up (display refresh ended)
+// controller and host ready
 constexpr bool kLogSessions = false;
 
 // Phone advertisement, manufacturer specific data (docs/ble_protocol.md)
@@ -69,15 +69,12 @@ const ble_uuid128_t kSchemaUuid = LIGHTINK_UUID(0x03);  // Watch writes the desc
 // every 100 ms at best, but the watch hears the phone only every 140-550 ms (measured);
 // 300 ms made Sync now fail at "connect"
 constexpr int kConnectMs = 1000;
-// A background sync scans at least this long, even when the display refresh (~350 ms)
-// ended before or soon after the stack was up (~300 ms), and at most kMaxScanUs while
-// the refresh goes on. Android asks for 100 ms but the watch hears the phone less often
-// (the phone's radio is shared with its audio links). Measured from the scan start,
-// with the app on the screen 94 % within 300 ms, 98 % within 500 ms; with the app in
-// the background ~75-80 % and ~89 %. A phone missed now is found at the next sync; a
-// phone that isn't there costs the stack start plus the scan
-constexpr int64_t kMinScanUs = 300'000;
-constexpr int64_t kMaxScanUs = 500'000;
+// How long a background sync scans. Android asks for 100 ms but the watch hears the
+// phone less often (the phone's radio is shared with its audio links). Measured from
+// the scan start, with the app on the screen 94 % within 300 ms, 98 % within 500 ms;
+// with the app in the background ~75-80 % and ~89 %. A phone missed now is found at
+// the next sync; a phone that isn't there costs the stack start plus the scan
+constexpr int64_t kAutoScanUs = 300'000;
 // Hard cap of a background sync, from radio on to radio off, for a slow exchange.
 // Room for a phone found at the end of the scan: stack ~300 ms, scan 500 ms, then
 // connecting (160-640 ms), encrypting (~120 ms) and the exchange (~250-450 ms)
@@ -102,7 +99,6 @@ enum : EventBits_t {
     kEvMtu = 1 << 5,
     kEvGatt = 1 << 6,
     kEvDone = 1 << 7,
-    kEvGiveUp = 1 << 8,
 };
 
 // Its own key, apart from the settings blob: a key, written only when pairing
@@ -138,7 +134,6 @@ struct Session {
     EventGroupHandle_t mEvents;
     const Cancel* mCancel {nullptr};
     std::function<void(uint32_t)> mShowCode;
-    std::atomic<bool> mGiveUp {false}; // Stop searching (display refresh ended)
 
     // Set up by the caller before start()
     std::optional<BlePeer> mPeer;
@@ -156,16 +151,8 @@ struct Session {
     // Timing, ms from start (for the log)
     int mTNvs {-1}, mTInit {-1}, mTSynced {-1}, mTScan {-1}, mTFound {-1}, mTConnected {-1};
     int mTEncrypted {-1}, mTTalked {-1}, mTDisconnected {-1}, mTDone {-1};
-    std::atomic<int> mTGiveUp {-1}; // Written by the caller's task
     int mRetries {0}; // Searches again after a failed connection, encryptions again
     int mTMtu {-1}, mTHandles {-1}, mTRead {-1}, mTSchema {-1}; // Exchange steps
-
-    // From the caller: the display refresh ended, stop searching
-    void giveUp() {
-        mTGiveUp = ms();
-        mGiveUp = true;
-        xEventGroupSetBits(mEvents, kEvGiveUp);
-    }
 
     // On the NimBLE host's core (1 on the ESP32, sdkconfig.defaults.esp32): enabling the
     // controller keeps the calling task busy for ~240 ms, which on core 0 held up the
@@ -189,7 +176,7 @@ struct Session {
 private:
     int64_t mStartUs {esp_timer_get_time()};
     int64_t mDeadlineUs {0};
-    int64_t mScanMinEndUs {0}, mScanMaxEndUs {0};
+    int64_t mScanEndUs {0};
     bool mStackUp {false}, mHostUp {false};
     uint8_t mOwnAddrType {0};
     uint8_t mAdvFlags {0};
@@ -206,23 +193,15 @@ private:
     int ms() const { return (esp_timer_get_time() - mStartUs) / 1000; }
 
     // Waits for any of `bits` until the deadline. Fails early on BACK, on a lost
-    // link and, while searching, once the caller gave up and the minimum scan is over
+    // link and, while searching, when the scan time is over
     bool wait(EventBits_t bits, int64_t deadlineUs, bool searching = false) {
+        const auto end = searching ? std::min(deadlineUs, mScanEndUs) : deadlineUs;
         while (true) {
             const auto now = esp_timer_get_time();
-            auto end = deadlineUs;
-            EventBits_t also = kEvDisconnected;
-            if (searching) {
-                end = std::min(end, mScanMaxEndUs);
-                if (mGiveUp)
-                    end = std::min(end, mScanMinEndUs);
-                else
-                    also |= kEvGiveUp; // Wake up when it happens, not at the next slice
-            }
             if (now >= end)
                 return false;
             const auto slice = std::min<int64_t>(end - now, 50'000);
-            const auto got = xEventGroupWaitBits(mEvents, bits | also, pdFALSE, pdFALSE,
+            const auto got = xEventGroupWaitBits(mEvents, bits | kEvDisconnected, pdFALSE, pdFALSE,
                                                  pdMS_TO_TICKS(slice / 1000) + 1);
             if (got & bits) {
                 xEventGroupClearBits(mEvents, bits);
@@ -549,9 +528,8 @@ private:
                 return BleResult::Failed;
             if (mTScan < 0)
                 mTScan = ms();
-            mScanMinEndUs = esp_timer_get_time() + kMinScanUs;
             // Background syncs only: Sync now and Pair search until their own deadline
-            mScanMaxEndUs = mMode == Mode::Auto ? esp_timer_get_time() + kMaxScanUs : mDeadlineUs;
+            mScanEndUs = mMode == Mode::Auto ? esp_timer_get_time() + kAutoScanUs : mDeadlineUs;
             if (!wait(kEvFound, mDeadlineUs, true)) {
                 ble_gap_disc_cancel();
                 return mResult == BleResult::Cancelled ? mResult : BleResult::NoPhone;
@@ -685,10 +663,10 @@ private:
         if constexpr (kBoostMhz != 0)
             cpuMhz(CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ); // Before the BT lock lowers the rail
         if constexpr (kLogSessions) {
-            ESP_LOGE(TAG, "%s nvs %d init %d up %d scan %d refresh %d found %d conn %d enc %d "
+            ESP_LOGE(TAG, "%s nvs %d init %d up %d scan %d found %d conn %d enc %d "
                      "talk %d disc %d done %d ms, %d retries",
                      std::string(magic_enum::enum_name(result)).c_str(), mTNvs, mTInit, mTSynced,
-                     mTScan, mTGiveUp.load(), mTFound, mTConnected, mTEncrypted, mTTalked,
+                     mTScan, mTFound, mTConnected, mTEncrypted, mTTalked,
                      mTDisconnected, mTDone, mRetries);
             if (mTConnected >= 0)
                 ESP_LOGE(TAG, "gatt: mtu %d handles %d read %d schema %d ms, mtu %u",
@@ -783,21 +761,12 @@ std::optional<uint32_t> nextSyncIn(time_t now) {
     return std::max<time_t>(60, std::min<time_t>(left, every));
 }
 
-Sync::Sync(const Watch& watch) : mSession(std::make_unique<Session>(Mode::Auto, watch)) {
-    prepare(*mSession);
-    mSession->start();
-}
-
-Sync::~Sync() {
-    if (!mFinished)
-        finish();
-}
-
-bool Sync::finish() {
-    mFinished = true;
-    mSession->giveUp();
-    mSession->join();
-    return commit(*mSession);
+bool autoSync(const Watch& watch) {
+    Session s(Mode::Auto, watch);
+    prepare(s);
+    s.start();
+    s.join();
+    return commit(s);
 }
 
 BleResult pair(const Watch& watch, const Cancel& cancel, std::function<void(uint32_t)> showCode) {

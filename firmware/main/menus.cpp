@@ -91,7 +91,6 @@ Ble::Watch Core::bleWatch() {
 }
 
 void Core::pairPhone() {
-  mBleUsed = true;
   Cancel cancel{[this]{ return (mTouch.poll() & Touch::BACK) != 0; }};
   std::atomic<int32_t> code{-1};
   auto job = std::async(std::launch::async, [&]{
@@ -121,7 +120,6 @@ void Core::pairPhone() {
 }
 
 void Core::syncPhone() {
-  mBleUsed = true;
   auto result = BleResult::Failed;
   bool changed = false;
   runCancellable("Syncing\nBACK cancels", [&](const Cancel& cancel) {

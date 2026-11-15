@@ -154,14 +154,13 @@ Core::Core()
         break;
     }
 
-    // Bluetooth sync with the phone, only on wakes that boot anyway. It runs while the
-    // display refreshes and gives up when the refresh ends unless the phone answered
-    // (it scans at least one advertising interval of the phone, see ble.cpp)
-    std::optional<Ble::Sync> bleSync;
+    // Bluetooth sync with the phone, on timer wakes only (the hourly full wake, or the
+    // wakes nextSyncIn() schedules): a touch answers at once. It runs before the draw
+    // (~0.3-0.8 s, 1.8 s at most), so the frame and the hour beep use the app's changes
     const auto now = mTime.getTimeval().tv_sec;
-    if ((wakeup_reason == ESP_SLEEP_WAKEUP_TIMER || wakeup_reason == ESP_SLEEP_WAKEUP_TOUCHPAD)
-        && !mBleUsed && mBattery.mCurPercent >= kBleMinBattery && Ble::due(now))
-        bleSync.emplace(bleWatch());
+    if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER && mBattery.mCurPercent >= kBleMinBattery
+        && Ble::due(now) && Ble::autoSync(bleWatch()))
+        kSettings.mWatchface.mLastDraw.mValid = false; // A full frame with the new settings
 
     // Re-set up the touch if settings have changed
     mTouch.setUp(kSettings.mUi.mDepth < 0);
@@ -184,13 +183,6 @@ Core::Core()
 
     draw();
 
-    if (bleSync && bleSync->finish()) {
-        // The app changed settings: show them now, not at the next full wake (the wake
-        // stub would keep drawing the old watchface until then)
-        mTouch.setUp(kSettings.mUi.mDepth < 0);
-        kSettings.mWatchface.mLastDraw.mValid = false;
-        draw();
-    }
     // Auto sync under an hour needs full wakes of its own, the wake stub doesn't sync.
     // Not at night or on a low battery, where the sync wouldn't run anyway
     if (mBattery.mCurPercent >= kBleMinBattery && !(kSettings.mPower.mNight && mNow.Hour < 7)) {

@@ -13,15 +13,14 @@ class Cancel;
  *
  * The watch is the BLE central and the phone the peripheral: the phone advertises all
  * the time and hosts the GATT server, the watch only turns its radio on for a moment
- * and decides when to talk. A wake that syncs scans while the display refreshes; if the
- * phone isn't heard by the time the refresh ends (and one advertising interval of
- * scanning, as the stack can be slower than the refresh) the radio goes off. The phone's
- * advertisement says whether it has changes, so when neither side has anything new
- * there is no connection at all. Wire format: docs/ble_protocol.md.
+ * and decides when to talk. A wake that syncs scans for a moment before it draws; if
+ * the phone isn't heard by then the radio goes off. The phone's advertisement says
+ * whether it has changes, so when neither side has anything new there is no connection
+ * at all. Wire format: docs/ble_protocol.md.
  */
 
-// How often the watch syncs on its own. From 1h up it rides on wakes that boot anyway
-// (touch or the hourly full wake); shorter intervals schedule full wakes of their own
+// How often the watch syncs on its own. From 1h up it rides on the hourly full wake;
+// shorter intervals schedule full wakes of their own
 enum SyncEvery : uint8_t {
     Off,
     _5min,
@@ -93,21 +92,10 @@ struct Watch {
     uint16_t mBatteryPermille;
 };
 
-struct Session;
-
-// Background sync meant to overlap the display refresh. Created before the draw,
-// finish() right after it
-class Sync {
-public:
-    explicit Sync(const Watch& watch);
-    ~Sync();
-    // Gives up at once if the phone wasn't heard yet, otherwise lets the exchange end
-    // (bounded). Returns true if the phone changed any setting: they are applied then
-    bool finish();
-private:
-    std::unique_ptr<Session> mSession;
-    bool mFinished {false};
-};
+// The automatic sync of a wake, before its draw: a short scan, then the exchange if
+// either side has news (bounded, 1.8 s at most). Returns true if the phone changed any
+// setting, they are applied then
+bool autoSync(const Watch& watch);
 
 // Blocking flows for the menu, BACK cancels them. showCode is called (from another
 // task) with the 6 digits the phone asks for

@@ -8,17 +8,18 @@ version byte when an old peer would misread the new layout.
 
 The watch is the BLE **central**, the phone the **peripheral**. The phone advertises all
 the time from a foreground service and hosts the GATT server. The watch only powers its
-radio on a full wake (a touch, the hourly full wake, or for *Auto* under an hour, a full
-wake scheduled for the sync), and only when the auto sync interval (5 min to 6 h, or
-Off) has passed:
+radio on a timer wake (the hourly full wake, or for *Auto* under an hour, a full wake
+scheduled for the sync; never on a touch, which answers at once), and only when the
+auto sync interval (5 min to 6 h, or Off) has passed. The sync runs before the wake's
+draw, so the frame and the hour beep already use the app's changes; the draw (~330 ms)
+and the beep come 0.3–0.8 s later (1.8 s at most):
 
-1. The radio starts with the display draw (~330 ms), a continuous passive scan looks
-   for the phone's advertisement. The stack takes ~215 ms to come up: the session runs
-   at 240 MHz (the BT lock holds the high rail it needs), and the controller, the
-   NimBLE host and the session task run on core 1 so the draw on core 0 isn't held up.
-2. The scan stops when the draw has ended and it has lasted at least 300 ms, or after
-   500 ms in any case. No phone heard: radio off, which costs the stack start plus
-   ~300 ms of scanning (~0.5 s).
+1. A continuous passive scan looks for the phone's advertisement. The stack takes
+   ~215 ms to come up: the session runs at 240 MHz (the BT lock holds the high rail it
+   needs), and the controller, the NimBLE host and the session task run on core 1 so a
+   draw on core 0 isn't held up (the progress screens of *Sync now* and *Pair phone*).
+2. The scan lasts 300 ms. No phone heard: radio off, which costs the stack start plus
+   the scan (~0.5 s).
 3. When it was heard, the flags in the advertisement and the watch's own state decide
    whether a connection is needed at all. Nothing new on either side: radio off right
    away. The phone can't notice such an attempt: the watch counts it as *Seen*, the
@@ -41,10 +42,9 @@ it would hide the phone's later ones with the new flags.
 With `kLogSessions` set in `ble.cpp` (debug, off by default) the watch logs one line
 per session with the time each step ended, in ms from the session start (-1 = not
 reached), and the step that failed: `ble: Synced nvs 3 init 250 up 292 scan 293
-refresh 210 found 340 conn 450 enc 500 talk 600 disc 620 done 660 ms, 0 retries` (an
+found 340 conn 450 enc 500 talk 600 disc 620 done 660 ms, 0 retries` (an
 example of the format, not a measurement; retries: searches again after a connection
-that didn't happen). `nvs`, `init`, `up`: flash, controller and host ready;
-`refresh`: the display refresh ended (background sync only); `talk`: the exchange
+that didn't happen). `nvs`, `init`, `up`: flash, controller and host ready; `talk`: the exchange
 ended. See *Measured on the device* below.
 
 Menu flows (*Pair phone*, *Sync now*) use the same session with longer limits and
@@ -122,7 +122,7 @@ watch, and with *Always reachable* on (the default; then on a minimum-importance
 channel, which Android shows at low importance at least for a foreground service). With *Always reachable* off the
 service runs without it while the app is open and Android stops it a minute or two
 after (measured: ~2 min): the watch then finds no phone until the app is opened again,
-and each automatic sync costs the stack start plus the whole 500 ms scan.
+and each automatic sync costs the stack start plus the whole 300 ms scan.
 
 Android advertises from a resolvable private address that rotates, and the ESP32
 controller has no LL privacy, so NimBLE could not match a later connection to its bond.
@@ -196,8 +196,8 @@ different from the one it knows (firmware update) raises `WANT_SCHEMA`.
 | 1      | 2    | Rev: the app's edit counter (u16)  |
 | 3      | n    | Changed values, as records         |
 
-The watch clamps each value to the setting's range, skips unknown ids, applies them
-after the display refresh and redraws when something changed.
+The watch clamps each value to the setting's range, skips unknown ids and applies them
+before the wake's draw (a full frame when something changed).
 
 ### `SCHEMA`, written by the watch when pairing, after a firmware change, or on `WANT_SCHEMA`
 
@@ -251,13 +251,21 @@ The pairing key is a separate NVS key (`ble_peer`), written only when pairing.
 
 - Session time per automatic attempt, measured (2026-11-14, final code): *Seen*
   240–370 ms (median ~320), *Synced* 500–780 ms (median ~580), *No phone* ~525 ms. A
-  wake with a sync now ends with its display draw (~340 ms) most of the time, against
+  wake with a sync then ended with its display draw (~340 ms) most of the time, against
   ~325 ms for a wake without one. In the morning, before these changes: *Seen*
   ~400–430 ms, *Synced* ~900 ms, *No phone* 1.2 s, and a wake with a sync ~650 ms. The
   current isn't measured; at ~100 mA that is ~9 µAh for *Seen* and ~15 µAh for *No
   phone*. At the default 1 h interval that is 4–7 times the ~2 µA idle draw, so for the
   solar budget choose *Auto: 6h* or *Off*
   (*Sync now* still works).
+- The session used to overlap the draw, scanning until the refresh ended (at least
+  300 ms, at most 500), and applied the app's changes after it with a second draw. The
+  hour beep then started before the changes and played the old sound. Since
+  2026-11-15 the sync runs first and the draw after it, scanning a fixed 300 ms (the
+  refresh had always ended before the 300 ms minimum): the radio time is the same, the
+  wake adds the draw in light sleep (not measured), and the frame and the beep come
+  0.3–0.8 s later on a wake with a sync. Touch wakes no longer sync, so a button never
+  waits for the radio.
 - No light sleep while Bluetooth is on: with the main crystal as its sleep clock
   (`CONFIG_BTDM_CTRL_LPCLK_SEL_MAIN_XTAL`) the controller holds a no-light-sleep lock
   from enable to disable, and an APB-max lock while the radio is awake. The CPU idles
@@ -267,7 +275,7 @@ The pairing key is a separate NVS key (`ble_peer`), written only when pairing.
   the start was the same and one exchange ran slow, not adopted without a current
   measurement.
 - Below 10 % battery the watch doesn't sync on its own.
-- *Auto* 1h and 6h add no wakes: they use the hourly full wake and touches. *5min* and
+- *Auto* 1h and 6h add no wakes: they use the hourly full wake. *5min* and
   *15min* replace the wake stub's cheap minute updates by a full boot plus a sync every
   interval: at 5 min that is 12 sessions an hour, roughly 12 × 10–17 µAh, about 60–100
   times the idle draw. They skip the extra wakes at night (*Night* in Power, 0–6 am) and
