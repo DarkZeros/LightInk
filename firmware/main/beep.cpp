@@ -10,8 +10,8 @@ namespace Beep {
 namespace {
 using Pattern = std::vector<std::pair<int, int>>;
 
-// The piezo is loudest around 4 kHz, so the coded chimes use 4096 Hz and its octave below
-constexpr int kHigh = 4096, kLow = 2048;
+// The piezo is loudest around 4 kHz, so the coded chimes use 4096 Hz
+constexpr int kHigh = 4096;
 
 // Adds the note, with a silence before it if it is not the first one
 void addNote(Pattern& p, int freq, int ms, int gap) {
@@ -20,24 +20,29 @@ void addNote(Pattern& p, int freq, int ms, int gap) {
   p.emplace_back(freq, ms);
 }
 
-// Roman numeral of the hour (1-12) with two symbols at the same pitch: I is a short
-// beep and V a long one, 10 is two of them (VV) since a third symbol was hard to tell
-// from V. 4 is "bip beeep" (IV), 9 "bip beeep beeep" (IVV), 12 "beeep beeep bip bip"
+// The two symbols of the coded chimes, told apart by their length at the same pitch
+constexpr int kShort = 70, kLong = 300, kSymbolGap = 110;
+
+// Roman numeral of the hour (1-12): I is a short beep and V a long one, 10 is two of
+// them (VV) since a third symbol was hard to tell from V. 4 is "bip beeep" (IV),
+// 9 "bip beeep beeep" (IVV), 12 "beeep beeep bip bip"
 Pattern romanPattern(int hour12) {
   constexpr const char* kRoman[] = {"", "I", "II", "III", "IV", "V", "VI",
                                     "VII", "VIII", "IVV", "VV", "VVI", "VVII"};
   Pattern p;
   for (auto c = kRoman[hour12]; *c; c++)
-    addNote(p, kHigh, *c == 'I' ? 70 : 300, 110);
+    addNote(p, kHigh, *c == 'I' ? kShort : kLong, kSymbolGap);
   return p;
 }
 
-// The hour (1-12) in 4 bits, first the highest: a high beep is a 1, a low beep a 0.
-// Always 4 beeps, 3 is "low low high high" (0011)
+// The hour (1-12) in 4 bits, first the highest: a long beep is a 1, a short one a 0.
+// Always 4 beeps, 3 is "bip bip beeep beeep" (0011). Not by pitch: the piezo is much
+// quieter an octave below 4 kHz, the zeros were barely heard and 12 (1100) sounded
+// like the Casio chime
 Pattern binaryPattern(int hour12) {
   Pattern p;
   for (auto bit = 3; bit >= 0; bit--)
-    addNote(p, (hour12 >> bit) & 1 ? kHigh : kLow, 90, 90);
+    addNote(p, kHigh, (hour12 >> bit) & 1 ? kLong : kShort, kSymbolGap);
   return p;
 }
 
