@@ -537,17 +537,43 @@ bool syncTime(uint32_t timeoutMs = 5000)
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
+// Every wait is bounded and only a complete reply changes anything: on most cold boots
+// the body never came, getString() waited 121 s with WiFi on (3.35 C, ~0.93 mAh,
+// measured 2026-11-17) and the empty parse set the timezone to UTC+0
 bool fetchLocationTz(int16_t& minutesWest, std::optional<Gps::Data::Location>& loc)
 {
+    constexpr uint32_t kTimeoutMs = 3000;
     HTTPClient http;
+    http.setConnectTimeout(kTimeoutMs);
+    http.setTimeout(kTimeoutMs);
     http.begin("http://ip-api.com/json/?fields=lat,lon,offset");
 
     int code = http.GET();
-    if (code != 200)
+    if (code != 200) {
+        ESP_LOGE("Geo", "HTTP %d", code);
+        http.end();
         return false;
+    }
+
+    // The reply is ~40 bytes: read it with our own deadline, not the stream's
+    const int size = http.getSize(); // -1 without Content-Length
+    auto* stream = http.getStreamPtr();
+    std::string body;
+    for (const uint32_t end = millis() + kTimeoutMs; millis() < end && body.size() < 512;) {
+        while (stream && stream->available() && body.size() < 512)
+            body += char(stream->read());
+        if ((size >= 0 && int(body.size()) >= size) || !http.connected())
+            break;
+        delay(10);
+    }
+    http.end();
 
     JsonDocument doc;
-    deserializeJson(doc, http.getString());
+    const auto err = deserializeJson(doc, body);
+    if (err || !doc["lat"].is<float>() || !doc["lon"].is<float>() || !doc["offset"].is<int>()) {
+        ESP_LOGE("Geo", "bad reply (%u of %d bytes): %s", unsigned(body.size()), size, err.c_str());
+        return false;
+    }
 
     loc.emplace();
     loc->mLat = doc["lat"].as<float>();
