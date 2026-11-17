@@ -475,11 +475,20 @@ void Core::setNextUpdate(uint32_t seconds)
 #include <Arduino.h>
 #include <WiFiManager.h>
 
+// The network that answered last time is tried first: a missing entry before it costs
+// its whole timeout with the radio on (2.1 s, ~176 mC of every sync, measured
+// 2026-11-17 with the first entry out of range)
+RTC_DATA_ATTR static int8_t sLastWifi = -1;
+
 bool connectWifi(uint32_t timeoutMs = 2000)
 {
     WiFi.mode(WIFI_STA);
     Trace::wifiStarted();
-    for (auto& net : kWifiNetworks) {
+    const int count = int(kWifiNetworks.size());
+    const int first = sLastWifi >= 0 && sLastWifi < count ? sLastWifi : 0;
+    for (int i = 0; i < count; i++) {
+        const int index = (first + i) % count;
+        auto& net = kWifiNetworks[index];
         ESP_LOGI("WiFi", "Connecting to %s", net.mSsid);
         WiFi.begin(net.mSsid, net.mPswd);
         uint32_t start = millis();
@@ -488,6 +497,7 @@ bool connectWifi(uint32_t timeoutMs = 2000)
         }
         if (WiFi.status() == WL_CONNECTED) {
             ESP_LOGE("WiFi", "Connected: %s", net.mSsid);
+            sLastWifi = int8_t(index);
             return true;
         }
         WiFi.disconnect(true);
