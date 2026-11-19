@@ -482,6 +482,7 @@ RTC_DATA_ATTR static int8_t sLastWifi = -1;
 
 bool connectWifi(uint32_t timeoutMs = 2000)
 {
+    constexpr uint32_t kAddressMs = 3000; // DHCP after joining, ~1 s seen
     WiFi.mode(WIFI_STA);
     Trace::wifiStarted();
     const int count = int(kWifiNetworks.size());
@@ -491,8 +492,11 @@ bool connectWifi(uint32_t timeoutMs = 2000)
         auto& net = kWifiNetworks[index];
         ESP_LOGI("WiFi", "Connecting to %s", net.mSsid);
         WiFi.begin(net.mSsid, net.mPswd);
+        // timeoutMs to find and join the network, then more for the address: joined at
+        // 1.4 s and still without one at 2 s, every network failed (seen 2026-11-19)
         uint32_t start = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+        while (WiFi.status() != WL_CONNECTED
+               && millis() - start < timeoutMs + (WiFi.STA.connected() ? kAddressMs : 0)) {
             delay(100);
         }
         if (WiFi.status() == WL_CONNECTED) {
