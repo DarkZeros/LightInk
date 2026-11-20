@@ -197,6 +197,11 @@ Core::Core()
     // Settings to flash, at most hourly and only if changed: a time compare otherwise
     SettingsTable::save(mTime.getTimeval().tv_sec);
 
+    // The sleep is counted from mNow, but the timer only starts at esp_deep_sleep_start():
+    // read the time again so what this wake took (draw, BLE, hour beep, ...) isn't added
+    // to every wake after it. From a second late the hourly wake misses XX:00:00 and its beep
+    mTime.readTime();
+
     // Calculate stepsize based on battery level or on battery save mode
     auto stepSize = [&] {
         if (kSettings.mPower.mNight && mNow.Hour < 7)
